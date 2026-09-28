@@ -16,9 +16,9 @@ services:
   backend:
     build:
       context: ./backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: /app/start.sh
     environment:
-      DATABASE_URL: postgresql://vehicle_scheduling:vehicle_scheduling@database:5432/vehicle_scheduling
+      DATABASE_URL: postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/vehicle_scheduling
     ports:
       - "8000:8000"
     volumes:
