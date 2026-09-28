@@ -253,7 +253,10 @@ The assignment primarily requires managing services rather than infrastructure c
 
 ### Trade-off
 
-Users cannot dynamically create or modify vehicles or railway topology in the initial version.
+Users cannot dynamically create or delete vehicles or railway topology in the
+initial version. Block traversal time remains editable because Block
+Configuration is a mandatory assignment page. Existing services retain their
+saved timeline snapshot when traversal configuration changes.
 
 ### When I Would Change It
 
@@ -295,17 +298,55 @@ Resource occupancy is initially treated as data derived from a service and its t
 
 ### Why
 
-Occupancy can always be reconstructed from the service path and timing configuration.
+Occupancy can always be reconstructed from the saved service timeline.
 
 Avoiding duplicated persisted state reduces synchronization concerns.
 
 ### Trade-off
 
-Conflict queries may require recalculation.
+Conflict queries may need to derive occupancy from saved timeline rows.
 
 ### When I Would Change It
 
 At substantially larger scale, occupancy could be materialized or indexed as a performance optimization.
+
+---
+
+## Persisted Timeline Snapshots
+
+### Decision
+
+Each accepted service stores the calculated interval for every path occurrence
+as a timeline snapshot.
+
+Changing a block's traversal time affects services created afterward and
+services that are explicitly updated. It does not silently recalculate existing
+services.
+
+### Why
+
+An accepted railway schedule should remain deterministic. Recalculating every
+read from current block configuration could change historical service times or
+create vehicle conflicts without any service edit.
+
+### Trade-off
+
+The timeline is derived data, so storing it duplicates information that could
+otherwise be recalculated. The write workflow must save the path and timeline
+snapshot atomically to prevent divergence.
+
+### Alternative Considered
+
+Recalculating timelines from current block configuration would keep the schema
+more normalized, but would make existing schedules unstable when configuration
+changes. Recalculating every affected service during a configuration update was
+also rejected as unnecessary transaction complexity for this assignment.
+
+### When I Would Change It
+
+If product requirements explicitly defined block configuration changes as
+retroactive, I would introduce a versioned configuration or a transactional
+replanning workflow instead of silently recalculating on read.
 
 ---
 
@@ -355,13 +396,17 @@ Core scheduling rules remain below the HTTP layer.
 
 Further implementation details will be documented as development progresses.
 
+The implemented PostgreSQL schema, timeline snapshot policy, mapping rules, and
+transaction ownership are documented in
+[`docs/PERSISTENCE_DESIGN.md`](docs/PERSISTENCE_DESIGN.md).
+
 ---
 
 ## Testing
 
 Core business rules are tested using `pytest`.
 
-The initial test suite focuses on path validation, including:
+The test suite covers path validation, including:
 
 - valid path
 - empty path
@@ -372,14 +417,18 @@ The initial test suite focuses on path validation, including:
 - valid block-to-block connection
 - mixed yard/platform/block path
 
-Later tests cover:
+It also covers:
 
 - timeline calculation
 - interval overlap
-- block conflicts
-- interlocking conflicts
 - vehicle conflicts
 - vehicle continuity
+- PostgreSQL migrations and deterministic seed behavior
+- block traversal configuration persistence
+- service repository CRUD and transaction rollback
+
+Block and interlocking conflict tests remain deferred with their bonus
+features.
 
 ---
 
@@ -399,6 +448,10 @@ docker compose up -d
 
 The frontend is available at `http://localhost:4200`, and the backend health
 endpoint is available at `http://localhost:8000/health`.
+
+Backend startup applies pending Alembic migrations and runs an idempotent seed
+for the fixed topology and vehicles `V1`/`V2`. Seed execution does not overwrite
+configured block traversal times.
 
 Backend application and test files, and frontend source files, are mounted into
 their containers. FastAPI reloads when backend application code changes, and
@@ -432,7 +485,7 @@ The initial implementation intentionally does not include:
 - automatic route finding
 - automatic schedule generation
 - vehicle management
-- topology management
+- topology structure management; block traversal configuration is mandatory
 - battery simulation
 - schedule playback
 - timezone conversion and multi-timezone support

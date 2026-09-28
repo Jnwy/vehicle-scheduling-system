@@ -20,7 +20,7 @@ conflict and ask for clarification first.
 
 ## Current Status
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 | Phase | Status | Verification |
 | --- | --- | --- |
@@ -28,8 +28,8 @@ Last updated: 2026-09-28
 | Path validation | Complete | Unit tests pass in Docker |
 | Timeline calculation | Complete | Unit tests pass in Docker |
 | Mandatory vehicle schedule validation | Complete | Unit tests pass in Docker |
-| Persistence | Next | Milestone defined below; implementation not started |
-| FastAPI CRUD | Not started | Deferred until persistence is complete |
+| Persistence | Complete, pending review | P0-P3 verified in Docker |
+| FastAPI CRUD | Next | Deferred until persistence changes are reviewed |
 | Minimal Angular UI | Not started | Deferred until API behavior is stable |
 | End-to-end Docker verification | Not started | Required before final delivery |
 | Block/interlocking conflicts | Deferred bonus | Not part of mandatory implementation |
@@ -43,7 +43,7 @@ docker compose exec backend python -m pytest tests
 Last verified result:
 
 ```text
-49 passed
+61 passed
 ```
 
 Latest completed milestone commits:
@@ -88,7 +88,8 @@ the existing domain objects without moving business rules into the ORM layer.
 - SQLAlchemy engine, session, and declarative model setup
 - Database migrations
 - Deterministic seed data for vehicles and the assignment topology
-- Persistence models for services, ordered path elements, and platform timings
+- Persistence models for services and ordered path/timeline snapshots that
+  retain each platform occurrence timing
 - Mapping between persistence records and existing domain objects
 - Repository-level create, read, update, delete, and list behavior
 - Transaction rollback on failed persistence operations
@@ -100,29 +101,29 @@ the existing domain objects without moving business rules into the ORM layer.
 - FastAPI routes and request/response schemas
 - HTTP error mapping
 - Angular integration
-- Vehicle or topology management CRUD
+- Vehicle or topology structure management CRUD; block traversal configuration
+  remains in scope
 - Authentication and authorization
 - Block/interlocking bonus conflicts
 - Production database deployment or tuning
 
-### Decision Checkpoint Before Schema Implementation
+### Timeline Storage Decision
 
-Decide whether calculated timeline intervals are persisted or reconstructed
-from source data.
+The project uses timeline snapshots. When a service is created or updated, its
+calculated interval for every path occurrence is persisted.
 
-The current preferred direction is to persist the service inputs:
+Block traversal configuration remains mutable, but changing it does not
+silently recalculate existing services. The new value applies to future service
+creation and explicit service updates.
 
-- `start_time`
-- ordered path
-- platform timings keyed by path index
+See `docs/PERSISTENCE_DESIGN.md` for the schema, mapping, and transaction
+contract.
 
-and reconstruct the timeline using block configuration. This avoids storing the
-same fact twice. Before implementing it, clarify what should happen to existing
-services if a block's `traversal_seconds` changes. Historical snapshot behavior
-may require storing the effective traversal value or calculated intervals.
+### Seeded Vehicle Decision
 
-Record the final decision in `docs/DOMAIN_RULES.md` before relying on it in the
-schema.
+The assignment uses `V1` and `V2` as examples but does not define a complete
+vehicle inventory. This implementation explicitly defines the initial seeded
+inventory as `V1` and `V2`.
 
 ### Persistence Definition of Done
 
@@ -132,8 +133,8 @@ The milestone is complete only when:
 2. Vehicles and the fixed topology are seeded deterministically.
 3. Service `vehicle_id`, `start_time`, ordered path, and platform timings can be
    persisted without loss of ordering or occurrence identity.
-4. Reading a service reconstructs a domain schedule equivalent to the saved
-   service under the documented timeline storage policy.
+4. Reading a service reconstructs the saved domain schedule from its persisted
+   timeline snapshot, independent of later block configuration changes.
 5. Repository create, get, list, update, and delete behavior is covered by
    database integration tests.
 6. Failed writes roll back without leaving partial service data.
@@ -147,12 +148,15 @@ The milestone is complete only when:
 
 #### P0: Persistence Contract
 
-- Resolve timeline snapshot versus reconstruction behavior.
-- Define table ownership, ordering, uniqueness, and cascade rules.
-- Review the proposed schema before implementation.
+- Status: complete.
+- Timeline snapshot behavior is recorded in `docs/DOMAIN_RULES.md`.
+- Table ownership, ordering, uniqueness, cascade, mapping, and transaction
+  rules are defined in `docs/PERSISTENCE_DESIGN.md`.
+- Seeded vehicle inventory is confirmed as `V1`, `V2`.
 
 #### P1: Database Foundation
 
+- Status: complete.
 - Add SQLAlchemy and migration tooling using the existing project dependency
   pattern.
 - Configure sessions from `DATABASE_URL`.
@@ -160,16 +164,31 @@ The milestone is complete only when:
 
 #### P2: Service Persistence
 
+- Status: complete.
 - Implement minimal persistence models and mapping functions.
 - Implement repository CRUD without embedding scheduling rules.
 - Keep transaction ownership explicit.
 
 #### P3: Integration Verification
 
+- Status: complete.
 - Add PostgreSQL integration tests.
 - Run the complete Docker test suite.
 - Verify migration, seed, rollback, and container restart behavior.
 - Update this document with results and the next milestone.
+
+Verification completed on 2026-09-29:
+
+- initial migration applied successfully to the existing empty database
+- Alembic reported no ORM/migration schema drift
+- idempotent seed created 21 elements, 28 directed connections, and vehicles
+  `V1`/`V2`
+- PostgreSQL and backend restart preserved a configured traversal value and
+  seed did not overwrite it
+- repository create, get, list, update, delete, rollback, timeline snapshot,
+  and block configuration behavior passed integration tests
+- full Docker suite: `61 passed`
+- backend health endpoint returned `{"status":"ok"}`
 
 ## Future Milestones
 

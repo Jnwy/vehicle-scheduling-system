@@ -253,6 +253,26 @@ B3    08:00:50 -> 08:01:15
 
 Timeline calculation should be deterministic.
 
+## Rule 4.1 — Persisted Timeline Snapshot
+
+When a service is created or updated, its calculated interval for every path
+occurrence is persisted as a timeline snapshot.
+
+Changing a block's traversal configuration does not silently recalculate an
+already persisted service. The new traversal value applies to services created
+afterward and to an existing service when that service is explicitly updated.
+
+This preserves the accepted schedule until the user requests a service change.
+
+## Rule 4.2 — Mutable Block Configuration
+
+Track element identities, types, and connections are fixed seeded topology.
+Block `traversal_seconds` is mutable configuration because the assignment
+requires a read/write Block Configuration page.
+
+The assignment provides no initial traversal value. A seeded block remains
+unconfigured until a non-negative value is supplied.
+
 ---
 
 # 5. Resource Occupancy

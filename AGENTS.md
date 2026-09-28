@@ -86,7 +86,7 @@ Especially avoid adding:
 - automatic route finding
 - shortest-path calculation
 - vehicle CRUD
-- topology CRUD
+- topology structure CRUD; block traversal configuration remains mandatory
 - authentication
 - authorization
 - battery simulation
@@ -110,6 +110,8 @@ Important current decisions include:
 - scheduling intervals use `[start, end)` semantics
 - core scheduling logic remains independent from infrastructure
 - topology and vehicles are initially seeded data
+- block traversal time is mutable configuration
+- persisted services retain a calculated timeline snapshot
 
 Do not silently change these decisions.
 
