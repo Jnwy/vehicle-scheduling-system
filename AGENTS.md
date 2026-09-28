@@ -195,6 +195,18 @@ Comments should explain important reasoning or non-obvious domain behavior.
 
 ## Git Workflow
 
+### Commit Authorization
+
+Do not run `git commit` unless the user explicitly authorizes the commit in the
+current request. Previous requests to commit do not grant ongoing permission.
+
+When changes are ready but the user has not authorized a commit, report the
+planned commit scope and message, then wait for the user to approve it.
+
+Proactively suggest a commit when the current changes form a coherent,
+verified milestone. Include the proposed commit message and file scope in the
+suggestion, but do not create the commit without explicit authorization.
+
 Use small, meaningful commits that reflect implementation milestones.
 
 Preferred commit types:
