@@ -179,7 +179,7 @@ def test_rejects_departure_before_arrival(topology, start_time):
     assert exc_info.value.path_index == 1
 
 
-def test_allows_zero_platform_dwell_time(topology, start_time):
+def test_allows_zero_duration_platform_interval(topology, start_time):
     timing = platform_timing(1, start_time, 20, 20)
 
     timeline = calculate_timeline(["B1", "P1A"], start_time, topology, [timing])
