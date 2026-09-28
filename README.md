@@ -21,6 +21,7 @@ Users create a `Service` by specifying:
 - a vehicle
 - a start time
 - an ordered path through the railway network
+- arrival and departure time for each platform occurrence in the path
 
 Example:
 
@@ -35,6 +36,18 @@ Example:
     "B3",
     "B5",
     "P2A"
+  ],
+  "platformTimings": [
+    {
+      "pathIndex": 2,
+      "arrivalTime": "2026-09-27T08:00:20",
+      "departureTime": "2026-09-27T08:00:50"
+    },
+    {
+      "pathIndex": 5,
+      "arrivalTime": "2026-09-27T08:01:45",
+      "departureTime": "2026-09-27T08:02:15"
+    }
   ]
 }
 ```
@@ -187,10 +200,13 @@ Some configuration fields only apply to certain element types.
 For example:
 
 - traversal time mainly applies to blocks
-- dwell time mainly applies to platforms
 - interlocking groups apply to blocks
 
 This may result in nullable subtype-specific fields.
+
+Platform arrival and departure times are not topology configuration. They
+belong to each service and are associated with a zero-based path index so
+repeated visits to the same platform remain distinguishable.
 
 ### When I Would Change It
 
@@ -416,6 +432,7 @@ The initial implementation intentionally does not include:
 - topology management
 - battery simulation
 - schedule playback
+- timezone conversion and multi-timezone support
 - production-scale scheduling optimization
 
 These are kept outside the initial scope to prioritize correctness of the core scheduling model.

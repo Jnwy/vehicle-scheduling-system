@@ -173,6 +173,10 @@ Do not hard-code a single traversal duration for all blocks.
 
 The backend should treat traversal time as block configuration data.
 
+The assignment does not provide an initial or default traversal time. A block
+remains unconfigured until a value is supplied, and timeline calculation must
+reject an unconfigured block.
+
 ---
 
 ## Topology Assumptions

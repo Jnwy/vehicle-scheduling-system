@@ -198,36 +198,57 @@ Do not introduce loop prevention unless required by the assignment.
 
 A valid path is converted into a time-based timeline.
 
-Timeline calculation starts from:
+The assignment defines arrival and departure times at each platform but does not
+define how elements before the first platform receive an absolute time. This
+project therefore makes the explicit assumption that each service has:
 
 ```text
 service.start_time
 ```
 
-Each element contributes time according to its configuration.
+This is the time at which the vehicle enters the first path element.
 
-Typical rules:
+Timezone normalization is outside the current scope. Timeline calculation
+preserves the timezone of the supplied `datetime` values and expects all values
+within a service to be mutually comparable. The application may use the system
+timezone or Asia/Taipei without domain-level conversion.
 
-- block → traversal time
-- platform → dwell time
-- yard → usually zero unless configured otherwise
+Time ownership is defined as follows:
+
+- block traversal time belongs to block configuration
+- platform arrival and departure belong to the service
+- yard duration is zero
+
+Each platform timing is identified by its zero-based path index, not only by
+platform ID. This allows a path to visit the same platform more than once.
+
+For every platform occurrence:
+
+```text
+arrival_time == previous_interval.end_time
+departure_time >= arrival_time
+```
+
+A block must have a configured non-negative traversal time before its timeline
+can be calculated. The assignment does not define a default traversal time.
 
 Example:
 
 ```text
 Service starts at 08:00:00
 
-B1 traversal = 30 sec
-P1A dwell = 30 sec
+B1 traversal = 20 sec
+P1A arrival = 08:00:20
+P1A departure = 08:00:50
 B3 traversal = 25 sec
 ```
 
 Timeline:
 
 ```text
-B1    08:00:00 -> 08:00:30
-P1A   08:00:30 -> 08:01:00
-B3    08:01:00 -> 08:01:25
+B1    08:00:00 -> 08:00:20
+P1A   08:00:20 -> 08:00:50
+B3    08:00:50 -> 08:01:15
 ```
 
 Timeline calculation should be deterministic.
