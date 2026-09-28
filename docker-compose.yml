@@ -16,10 +16,14 @@ services:
   backend:
     build:
       context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       DATABASE_URL: postgresql://vehicle_scheduling:vehicle_scheduling@database:5432/vehicle_scheduling
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
     depends_on:
       database:
         condition: service_healthy
@@ -27,8 +31,11 @@ services:
   frontend:
     build:
       context: ./frontend
+    command: npm start -- --poll 1000
     ports:
       - "4200:4200"
+    volumes:
+      - ./frontend/src:/app/src
     depends_on:
       - backend
 
