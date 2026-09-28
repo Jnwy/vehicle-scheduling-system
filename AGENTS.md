@@ -1,0 +1,235 @@
+# AGENTS.md
+
+This file defines how coding agents should work on this repository.
+
+Before making changes, read:
+
+1. `docs/DOMAIN_RULES.md`
+2. `docs/TOPOLOGY.md`
+3. `README.md`
+
+If these documents conflict with implementation assumptions, follow `DOMAIN_RULES.md` for business rules.
+
+Do not silently change domain rules or topology assumptions. If something is ambiguous, report the ambiguity before changing the model.
+
+---
+
+## Current Development Strategy
+
+Implement the project incrementally.
+
+Do not attempt to complete the entire assignment in one pass.
+
+Current development order:
+
+```text
+Domain rules
+→ Unit tests
+→ Path validation
+→ Timeline calculation
+→ Conflict detection
+→ Persistence
+→ FastAPI
+→ Minimal Angular UI
+→ Docker integration
+→ Final documentation
+```
+
+Bonus features are not part of the initial implementation unless explicitly requested.
+
+---
+
+## Development Rules
+
+### 1. Domain logic first
+
+Scheduling rules must not depend directly on:
+
+- FastAPI
+- SQLAlchemy
+- HTTP requests
+- database sessions
+
+Prefer pure functions or small domain services where practical.
+
+Core rules must be testable with `pytest`.
+
+---
+
+### 2. Do not over-engineer
+
+Prefer the simplest implementation that correctly satisfies the current requirement.
+
+Do not introduce abstractions such as:
+
+- repository frameworks
+- event buses
+- CQRS
+- dependency-injection frameworks
+- generic base classes
+- complex inheritance hierarchies
+
+unless there is an immediate need.
+
+---
+
+### 3. Do not expand scope automatically
+
+Do not implement features that were not explicitly requested.
+
+Especially avoid adding:
+
+- automatic route finding
+- shortest-path calculation
+- vehicle CRUD
+- topology CRUD
+- authentication
+- authorization
+- battery simulation
+- playback
+- automatic scheduling
+- advanced UI styling
+
+unless explicitly requested.
+
+---
+
+### 4. Preserve documented domain decisions
+
+Important current decisions include:
+
+- railway topology is a directed graph
+- `YARD`, `PLATFORM`, and `BLOCK` share the `TrackElement` abstraction
+- the user provides the service path
+- connections are directional
+- block-to-block connections are valid
+- scheduling intervals use `[start, end)` semantics
+- core scheduling logic remains independent from infrastructure
+- topology and vehicles are initially seeded data
+
+Do not silently change these decisions.
+
+If a better alternative is identified, explain the trade-off before modifying the implementation.
+
+---
+
+### 5. Tests are part of the feature
+
+Whenever implementing a domain rule:
+
+1. identify its expected behavior
+2. add or update unit tests
+3. implement the rule
+4. run the affected tests
+5. report the results
+
+Do not consider a core domain rule complete without tests.
+
+---
+
+## Current Phase
+
+Only work on the phase or task explicitly requested.
+
+Do not continue to the next phase automatically.
+
+If the current task is path validation, do not also implement timeline calculation, persistence, API endpoints, or UI unless explicitly asked.
+
+---
+
+## Docker Requirement
+
+The final project must be runnable with Docker as required by the assignment.
+
+Docker configuration should remain simple.
+
+Target final command:
+
+```bash
+docker compose up --build
+```
+
+Do not spend time on production deployment concerns such as:
+
+- Kubernetes
+- production Nginx tuning
+- CI/CD pipelines
+- advanced multi-stage optimization
+
+unless explicitly requested.
+
+---
+
+## When Completing a Task
+
+Provide a short summary containing:
+
+- files added
+- files changed
+- behavior implemented
+- tests added or changed
+- test results
+- assumptions made
+- unresolved questions
+
+Do not hide implementation assumptions.
+
+---
+
+## Code Style
+
+Prefer:
+
+- small focused modules
+- descriptive names
+- explicit domain terminology
+- type hints
+- simple control flow
+- deterministic domain logic
+
+Avoid comments that merely repeat what the code does.
+
+Comments should explain important reasoning or non-obvious domain behavior.
+
+---
+
+## Git Workflow
+
+Use small, meaningful commits that reflect implementation milestones.
+
+Preferred commit types:
+
+- `feat:` new behavior
+- `fix:` bug fix
+- `test:` tests
+- `docs:` documentation
+- `chore:` tooling or project setup
+- `refactor:` structural change without behavior change
+
+Do not create one large final commit containing unrelated work.
+
+Before committing:
+
+1. run relevant tests
+2. review changed files
+3. ensure the commit contains one coherent change
+
+Do not commit broken intermediate states unless explicitly needed for investigation.
+
+---
+
+## Priority
+
+When forced to choose between:
+
+```text
+more features
+```
+
+and:
+
+```text
+correct, understandable, tested core behavior
+```
+
+choose the second.
