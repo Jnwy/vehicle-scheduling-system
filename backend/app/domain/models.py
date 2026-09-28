@@ -13,7 +13,6 @@ class TrackElement:
     id: str
     element_type: TrackElementType
     traversal_seconds: int | None = None
-    dwell_seconds: int | None = None
     interlocking_group: str | None = None
 
 

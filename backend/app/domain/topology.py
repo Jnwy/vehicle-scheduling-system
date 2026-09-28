@@ -11,7 +11,6 @@ def assignment_topology() -> RailwayTopology:
             platform_id: TrackElement(
                 id=platform_id,
                 element_type=TrackElementType.PLATFORM,
-                dwell_seconds=30,
             )
             for platform_id in platform_ids
         },
@@ -19,7 +18,6 @@ def assignment_topology() -> RailwayTopology:
             block_id: TrackElement(
                 id=block_id,
                 element_type=TrackElementType.BLOCK,
-                traversal_seconds=30,
                 interlocking_group=_interlocking_group_for(block_id),
             )
             for block_id in block_ids
