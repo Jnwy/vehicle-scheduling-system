@@ -366,13 +366,43 @@ Later tests cover:
 
 ## Running the Project
 
-To be completed after the backend and frontend project structure is finalized.
+Build and start the complete application from the repository root:
+
+```bash
+docker compose up --build
+```
+
+After the first build, start the existing containers in the background with:
+
+```bash
+docker compose up -d
+```
+
+The frontend is available at `http://localhost:4200`, and the backend health
+endpoint is available at `http://localhost:8000/health`.
+
+Backend application and test files, and frontend source files, are mounted into
+their containers. FastAPI reloads when backend application code changes, and
+Angular rebuilds when frontend source code changes. Rebuild the relevant image
+after changing dependencies, a Dockerfile, or build configuration:
+
+```bash
+docker compose up --build -d backend
+docker compose up --build -d frontend
+```
 
 ---
 
 ## Running Tests
 
-To be completed after the Python project structure is finalized.
+Run the backend unit tests inside the running backend container:
+
+```bash
+docker compose exec backend python -m pytest tests
+```
+
+Because the tests directory is mounted into the container, test-only changes do
+not require rebuilding the backend image.
 
 ---
 
