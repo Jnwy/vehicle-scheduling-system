@@ -2,7 +2,9 @@
 
 A vehicle scheduling system for managing services on a predefined railway topology.
 
-The system allows users to assign vehicles to routes at specific times while preventing conflicts involving vehicles, track blocks, and interlocking resources.
+The system allows users to assign vehicles to routes at specific times while
+preventing mandatory vehicle schedule conflicts. Track block and interlocking
+conflicts are optional assignment bonuses and are deferred.
 
 > This project is implemented as a technical assignment. The primary focus is correctness, domain modeling, scheduling rules, and clear engineering trade-offs rather than feature volume or UI complexity.
 
@@ -65,14 +67,14 @@ The initial implementation focuses on:
 - predefined vehicles
 - directed path validation
 - timeline calculation
-- block occupancy conflicts
-- interlocking conflicts
 - vehicle scheduling conflicts
 - vehicle location continuity
 - unit-tested domain logic
 - minimal Angular interface
 
-Optional assignment features are intentionally deferred until the core scheduling behavior is complete.
+Optional assignment features, including block occupancy and interlocking
+conflicts, are intentionally deferred until the mandatory scheduling behavior
+is complete.
 
 ---
 
@@ -89,9 +91,9 @@ Validate Path
       ↓
 Calculate Timeline
       ↓
-Derive Resource Occupancy
+Derive Vehicle Occupancy
       ↓
-Detect Conflicts
+Detect Vehicle Overlap
       ↓
 Validate Vehicle Continuity
       ↓
@@ -139,14 +141,12 @@ Scheduling conflicts are represented as resource occupancy over time.
 Examples of resources:
 
 ```text
-block:B3
-
-interlocking:IG2
-
 vehicle:V1
 ```
 
-This allows several domain-specific conflict rules to share the same underlying time-overlap model.
+The mandatory implementation uses occupancy across the complete service for a
+vehicle. The same model may later support bonus block and interlocking
+resources, but those conflict rules are not part of the current scope.
 
 All scheduling intervals use half-open semantics:
 

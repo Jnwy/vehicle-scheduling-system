@@ -27,12 +27,13 @@ Domain rules
 → Unit tests
 → Path validation
 → Timeline calculation
-→ Conflict detection
+→ Mandatory vehicle schedule validation
 → Persistence
 → FastAPI
 → Minimal Angular UI
 → Docker integration
 → Final documentation
+→ Optional bonus conflict detection
 ```
 
 Bonus features are not part of the initial implementation unless explicitly requested.

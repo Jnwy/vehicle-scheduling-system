@@ -269,13 +269,14 @@ end_time
 service_id
 ```
 
-Resource types include:
+The mandatory scheduling rules currently use:
 
 ```text
-BLOCK
-INTERLOCKING
 VEHICLE
 ```
+
+`BLOCK` and `INTERLOCKING` occupancy are reserved for the deferred bonus
+conflict rules.
 
 ---
 
@@ -287,13 +288,17 @@ All occupancy intervals use half-open intervals:
 [start, end)
 ```
 
-Two intervals overlap only when:
+For two non-empty intervals, they overlap only when:
 
 ```text
 startA < endB
 and
 startB < endA
 ```
+
+A zero-duration interval `[t, t)` is empty and does not overlap any interval.
+It still participates in ordering and vehicle location continuity when it is a
+service occupancy.
 
 Example:
 
@@ -315,15 +320,18 @@ Conflict.
 
 ---
 
-# 7. Block Conflict
+# 7. Block Conflict (Deferred Bonus)
 
 A block may only be occupied by one service at a time.
 
 If two services occupy the same block during overlapping intervals, the new or updated service must be rejected.
 
+This rule is an assignment bonus and is not part of the mandatory vehicle
+schedule validation phase.
+
 ---
 
-# 8. Interlocking Conflict
+# 8. Interlocking Conflict (Deferred Bonus)
 
 Blocks may belong to an interlocking group.
 
@@ -345,11 +353,17 @@ This should be treated as:
 resource = interlocking:IG1
 ```
 
+This rule is an assignment bonus and is not part of the mandatory vehicle
+schedule validation phase.
+
 ---
 
 # 9. Vehicle Conflict
 
 A vehicle cannot execute two services during overlapping time intervals.
+Vehicle occupancy spans the complete service interval from its first timeline
+start to its final timeline end. Only services assigned to the same vehicle are
+compared.
 
 Example:
 
@@ -364,6 +378,9 @@ Service B
 ```
 
 Invalid.
+
+When validating an update, the existing service with the same non-null service
+ID is excluded from comparison with the candidate.
 
 ---
 
@@ -391,6 +408,11 @@ For the initial implementation, use the simplest rule:
 
 Do not implement automatic deadheading or repositioning unless required later.
 
+Only the immediately adjacent predecessor and successor services for the same
+vehicle are checked when inserting or updating a service. A time gap does not
+permit the vehicle to change location on its own. Services assigned to other
+vehicles do not affect this validation.
+
 ---
 
 # 11. Create / Update Validation
@@ -401,15 +423,20 @@ When creating or updating a service:
 1. validate vehicle exists
 2. validate path
 3. calculate timeline
-4. derive resource occupancy
-5. validate block conflicts
-6. validate interlocking conflicts
-7. validate vehicle time conflicts
-8. validate vehicle location continuity
-9. persist only if all checks succeed
+4. derive full-service vehicle occupancy
+5. validate vehicle time conflicts
+6. validate vehicle location continuity
+7. persist only if all checks succeed
 ```
 
 Do not persist an invalid service and then attempt to repair it.
+
+Existing services are treated as previously validated data. Create and update
+validation checks whether the candidate can be inserted among them.
+
+If the block and interlocking bonus is implemented later, its occupancy and
+conflict checks can be added after timeline calculation without changing the
+mandatory vehicle rules.
 
 ---
 
@@ -428,11 +455,11 @@ Initial path validator tests:
 7. block-to-block connection passes
 8. mixed yard/platform/block path passes
 
-Later add tests for:
+Mandatory scheduling tests include:
 
 - timeline calculation
 - interval overlap
-- block conflict
-- interlocking conflict
 - vehicle overlap
 - vehicle continuity
+
+Block and interlocking conflict tests belong to the deferred bonus phase.
