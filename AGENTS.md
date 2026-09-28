@@ -6,9 +6,12 @@ Before making changes, read:
 
 1. `docs/DOMAIN_RULES.md`
 2. `docs/TOPOLOGY.md`
-3. `README.md`
+3. `docs/IMPLEMENTATION_PLAN.md`
+4. `README.md`
 
-If these documents conflict with implementation assumptions, follow `DOMAIN_RULES.md` for business rules.
+The original assignment is the highest-priority requirements source. For
+repository decisions, follow the source priority documented in
+`docs/IMPLEMENTATION_PLAN.md`.
 
 Do not silently change domain rules or topology assumptions. If something is ambiguous, report the ambiguity before changing the model.
 
@@ -132,6 +135,10 @@ Do not consider a core domain rule complete without tests.
 
 Only work on the phase or task explicitly requested.
 
+Use `docs/IMPLEMENTATION_PLAN.md` as the tracked source for current milestone
+status, definition of done, unresolved decisions, and the next concrete action.
+Update it when a milestone changes or completes, not for every small edit.
+
 Do not continue to the next phase automatically.
 
 If the current task is path validation, do not also implement timeline calculation, persistence, API endpoints, or UI unless explicitly asked.
@@ -207,6 +214,11 @@ planned commit scope and message, then wait for the user to approve it.
 Proactively suggest a commit when the current changes form a coherent,
 verified milestone. Include the proposed commit message and file scope in the
 suggestion, but do not create the commit without explicit authorization.
+
+Before a cross-machine or cross-agent handoff, update the tracked implementation
+plan, commit after explicit user authorization, and push the commits. Do not
+rely on `.local-docs/`, local database volumes, uncommitted changes, or chat
+history for required project context.
 
 Use small, meaningful commits that reflect implementation milestones.
 

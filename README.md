@@ -8,6 +8,9 @@ conflicts are optional assignment bonuses and are deferred.
 
 > This project is implemented as a technical assignment. The primary focus is correctness, domain modeling, scheduling rules, and clear engineering trade-offs rather than feature volume or UI complexity.
 
+Current milestone status, definitions of done, and cross-machine handoff notes
+are tracked in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+
 ---
 
 ## Overview
