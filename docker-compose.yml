@@ -1,0 +1,36 @@
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vehicle_scheduling
+      POSTGRES_USER: vehicle_scheduling
+      POSTGRES_PASSWORD: vehicle_scheduling
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vehicle_scheduling -d vehicle_scheduling"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://vehicle_scheduling:vehicle_scheduling@database:5432/vehicle_scheduling
+    ports:
+      - "8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "4200:4200"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
