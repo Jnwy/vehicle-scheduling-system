@@ -20,7 +20,7 @@ conflict and ask for clarification first.
 
 ## Current Status
 
-Last updated: 2026-09-29
+Last updated: 2026-09-30
 
 | Phase | Status | Verification |
 | --- | --- | --- |
@@ -28,8 +28,8 @@ Last updated: 2026-09-29
 | Path validation | Complete | Unit tests pass in Docker |
 | Timeline calculation | Complete | Unit tests pass in Docker |
 | Mandatory vehicle schedule validation | Complete | Unit tests pass in Docker |
-| Persistence | Complete, pending review | P0-P3 verified in Docker |
-| FastAPI CRUD | Next | Deferred until persistence changes are reviewed |
+| Persistence | Complete, reviewed | P0-P3 verified; review fixes verified in PostgreSQL and Docker |
+| FastAPI CRUD | Next | Persistence review complete; begin with API/application contract |
 | Minimal Angular UI | Not started | Deferred until API behavior is stable |
 | End-to-end Docker verification | Not started | Required before final delivery |
 | Block/interlocking conflicts | Deferred bonus | Not part of mandatory implementation |
@@ -43,12 +43,14 @@ docker compose exec backend python -m pytest tests
 Last verified result:
 
 ```text
-61 passed
+66 passed
 ```
 
 Latest completed milestone commits:
 
 ```text
+8262561 docs: document persistence design and milestone
+8d1129f feat: add PostgreSQL persistence layer
 3e233e1 feat: validate mandatory vehicle schedules
 dd455c6 docs: separate mandatory rules from bonus conflicts
 ```
@@ -76,7 +78,7 @@ FastAPI or persistence code:
 
 See `docs/DOMAIN_RULES.md` for the complete rules and assumptions.
 
-## Next Milestone: Persistence
+## Completed Milestone: Persistence
 
 ### Objective
 
@@ -189,6 +191,42 @@ Verification completed on 2026-09-29:
   and block configuration behavior passed integration tests
 - full Docker suite: `61 passed`
 - backend health endpoint returned `{"status":"ok"}`
+
+### Persistence Review: 2026-09-30
+
+- Status: complete; review fix and tests are verified in PostgreSQL and Docker.
+- The current local application database had no migrated tables, so the first
+  review run produced `49 passed, 12 errors` during integration-test setup.
+  This was an environment prerequisite failure, not a confirmed repository bug.
+- A separate PostgreSQL database, `persistence_review`, was initialized with
+  `alembic upgrade head`; the application database was left unchanged.
+- PostgreSQL regression tests reproduced stale path/timeline snapshots after
+  an update when the service ORM record and its relationship were already
+  loaded. The fix expires only `path_elements` after successful replacement.
+- Added five test cases covering get/list after a loaded update, successive
+  updates, rollback after child insertion failure, and repeated platform
+  occurrence ordering/timing.
+- Existing snapshot stability, cascade deletion, seed preservation, and
+  caller-owned transaction tests passed. No domain or repository interface
+  changes were required.
+- Full Docker suite: `66 passed`; `alembic check` detected no schema drift.
+
+Review verification commands (database must already exist):
+
+```bash
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/persistence_review --entrypoint alembic backend upgrade head
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/persistence_review --entrypoint python backend -m pytest tests -q
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/persistence_review --entrypoint alembic backend check
+```
+
+### Next Concrete Action
+
+Begin the FastAPI API/application contract when that phase is explicitly
+requested. Define service CRUD and supporting seeded topology/vehicle reads,
+mutable block configuration, request/response schemas, and HTTP error mapping.
+Select a locking or isolation strategy for concurrent schedule writes before
+implementing the shared validation/persistence transaction boundary. Angular
+and bonus conflict rules remain deferred.
 
 ## Future Milestones
 

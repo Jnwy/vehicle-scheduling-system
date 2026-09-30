@@ -138,6 +138,8 @@ class ServiceRepository:
         )
         self._session.flush()
         self._write_path_snapshot(schedule.service_id, schedule)
+        # Bulk child replacement does not refresh an already loaded relationship.
+        self._session.expire(record, ["path_elements"])
         return schedule
 
     def delete(self, service_id: int) -> bool:
