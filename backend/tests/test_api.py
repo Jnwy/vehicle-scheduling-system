@@ -53,6 +53,40 @@ def create(client, **kwargs):
     return response.json()
 
 
+@pytest.mark.parametrize("origin", ["http://localhost:4200", "http://127.0.0.1:4200"])
+def test_allowed_angular_origins_receive_cors_headers(origin):
+    with TestClient(app, raise_server_exceptions=False) as caller:
+        preflight = caller.options(
+            "/health",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        response = caller.get("/health", headers={"Origin": origin})
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == origin
+    assert "GET" in preflight.headers["access-control-allow-methods"]
+    assert "content-type" in preflight.headers["access-control-allow-headers"].lower()
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+
+
+def test_unallowed_origin_does_not_receive_cors_allow_origin_header():
+    with TestClient(app, raise_server_exceptions=False) as caller:
+        preflight = caller.options(
+            "/health",
+            headers={
+                "Origin": "http://localhost:4201",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        response = caller.get("/health", headers={"Origin": "http://localhost:4201"})
+    assert "access-control-allow-origin" not in preflight.headers
+    assert "access-control-allow-origin" not in response.headers
+
+
 def test_complete_crud_and_seed_reads(client):
     assert client.get("/vehicles").json() == [{"id": "V1"}, {"id": "V2"}]
     graph = client.get("/topology").json()
