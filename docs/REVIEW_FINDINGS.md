@@ -3,8 +3,14 @@
 Recorded 2026-10-02 from a full review of `main` at `2d1fe00`.
 
 This document lists the seven problems found in that review and the plan to
-fix them. Nothing here is implemented yet. Each phase needs explicit user
-authorization before work starts and before any commit.
+fix them. Each phase needs explicit user authorization before work starts and
+before any commit.
+
+| Finding | Status |
+| --- | --- |
+| F1 | Fixed in `c50754e` |
+| F2 | Fixed in `110afae` |
+| F3-F7 | Open |
 
 ## Verification Baseline
 
@@ -23,7 +29,7 @@ State of `2d1fe00` when the findings were recorded:
 
 ### F1 — Unchanged update fails after a block time change
 
-Severity: medium. Found in the browser walkthrough.
+Severity: medium. Found in the browser walkthrough. Fixed in `c50754e`.
 
 Steps: save a service, change the traversal time of a block on its path, open
 the service in the Schedule Editor, and press Update without touching any
@@ -40,7 +46,7 @@ current block configuration and rejects the stale arrivals.
 
 ### F2 — Error messages expose internal details
 
-Severity: medium (visible in every rejected write).
+Severity: medium (visible in every rejected write). Fixed in `110afae`.
 
 The editor shows text such as `Schedule conflict: VehicleOverlapError: Service
 None overlaps service 2 assigned to the same vehicle.` The Python exception
@@ -129,6 +135,22 @@ browser check unless the decision below adds one.
 Decision needed: whether to add a minimal frontend unit-test setup. It is not
 one of the seven findings, but F1 and F6 both change pure functions that are
 cheap to test.
+
+Phase A result (2026-10-02):
+
+- F2: conflict messages say "the new service" for an unsaved candidate; the
+  editor shows the message without the exception class name. `code` and the
+  structured fields are unchanged. Four domain tests added.
+- F1: `savedTimingsAreStale` in `frontend/src/app/service-timing.ts` detects
+  a stale snapshot when a service is opened; the editor recalculates and shows
+  a warning. An up-to-date snapshot is still sent unchanged.
+- Verification: full backend suite in Docker `182 passed`; `ng build`
+  succeeded; headless Chrome check against temporary containers built from
+  the fix branch confirmed the three 409 messages, one 422 message, the stale
+  edit saving on the first attempt with the recalculated timeline, and the
+  unchanged-snapshot control case.
+- Not done: no frontend unit-test setup was added (decision still open), so
+  `savedTimingsAreStale` has browser verification only.
 
 ### Phase B — Viewer and playback (F6, F5)
 

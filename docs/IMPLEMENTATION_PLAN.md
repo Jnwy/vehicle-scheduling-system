@@ -64,13 +64,15 @@ dd455c6 docs: separate mandatory rules from bonus conflicts
 ## Next Concrete Action: Review Follow-ups (2026-10-02)
 
 A full review of `main` at `2d1fe00` recorded seven findings (F1-F7) and a
-phased fix plan in [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md). No fix is
-implemented yet.
+phased fix plan in [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md).
 
-Next action: get user authorization for Phase A (F1 stale platform timings on
-edit, F2 user-readable error messages), then resolve the open decisions listed
-in that document before Phases B and C. This supersedes the older "Next
-Concrete Action" section below.
+Phase A is done on branch `worktree-review-findings-plan` and not yet merged
+into `main`: F2 (`110afae`, user-readable error messages) and F1 (`c50754e`,
+stale platform timings on edit). Full backend suite: `182 passed`.
+
+Next action: merge that branch after user review, then resolve the open
+decisions in that document before Phase B (F6, F5) and Phase C (F4, F3). This
+supersedes the older "Next Concrete Action" section below.
 
 ## Active Handoff: Integration Recovery (2026-10-02)
 
