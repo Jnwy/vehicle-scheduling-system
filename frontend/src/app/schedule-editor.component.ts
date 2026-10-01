@@ -9,7 +9,7 @@ import { SchedulingApi } from './scheduling-api.service';
 import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
 import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
 import { TrackMapComponent } from './track-map.component';
-import { derivePlatformTimings, nextStartTime } from './service-timing';
+import { derivePlatformTimings, nextStartTime, savedTimingsAreStale } from './service-timing';
 
 interface TimingFormRow {
   pathIndex: number;
@@ -214,6 +214,11 @@ export class ScheduleEditorComponent implements OnInit {
       })),
     };
     this.pathSelection.set([...service.path]);
+    if (savedTimingsAreStale(service, this.topology().elements)) {
+      this.recalculateTimings();
+      this.showWarning(`Editing service #${service.id}. Block traversal times changed since it was saved, so platform times were recalculated. Saving applies the new times.`);
+      return;
+    }
     this.recalculateTimings(true);
     this.showSuccess(`Editing service #${service.id}.`);
   }

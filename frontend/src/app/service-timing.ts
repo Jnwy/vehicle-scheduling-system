@@ -1,4 +1,4 @@
-import type { PlatformTiming, TrackElementResponse } from './models';
+import type { PlatformTiming, ServiceResponse, TrackElementResponse } from './models';
 
 const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -58,4 +58,34 @@ export function derivePlatformTimings(
     }
   }
   return { timings, error: '', missingBlockIds };
+}
+
+// A saved timeline is a snapshot; it goes stale when a block on its path is
+// reconfigured. The backend recalculates on update and rejects stale arrivals.
+export function savedTimingsAreStale(
+  service: Pick<ServiceResponse, 'startTime' | 'path' | 'platformTimings'>,
+  elements: TrackElementResponse[],
+): boolean {
+  const byId = new Map(elements.map((element) => [element.id, element]));
+  const timingByIndex = new Map(service.platformTimings.map((timing) => [timing.pathIndex, timing]));
+  let cursor = Date.parse(service.startTime);
+  for (const [pathIndex, id] of service.path.entries()) {
+    const element = byId.get(id);
+    if (!element) {
+      return false;
+    }
+    if (element.elementType === 'BLOCK') {
+      if (element.traversalSeconds === null) {
+        return false;
+      }
+      cursor += element.traversalSeconds * 1000;
+    } else if (element.elementType === 'PLATFORM') {
+      const timing = timingByIndex.get(pathIndex);
+      if (!timing || Date.parse(timing.arrivalTime) !== cursor) {
+        return true;
+      }
+      cursor = Date.parse(timing.departureTime);
+    }
+  }
+  return false;
 }
