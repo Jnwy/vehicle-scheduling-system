@@ -96,7 +96,7 @@ def test_complete_crud_and_seed_reads(client):
     assert len(client.get("/blocks").json()) == 14
     assert client.put("/blocks/B1", json={"traversalSeconds": 20}).status_code == 200
     first = create(client, traversal=20)
-    second = create(client, vehicle="V2", traversal=20)
+    second = create(client, vehicle="V2", traversal=20, start=120)
     assert client.get(f'/services/{first["id"]}').json() == first
     assert [item["id"] for item in client.get("/services").json()] == [first["id"], second["id"]]
     response = client.put(f'/services/{first["id"]}', json=payload(start=60, traversal=20))
@@ -122,8 +122,10 @@ def test_empty_schedule_analysis_includes_seeded_vehicles(client):
 
 
 def test_schedule_analysis_reports_cross_vehicle_block_conflict(client):
-    first = create(client)
-    second = create(client, vehicle="V2")
+    # B5 is outside every interlocking group, so the write is accepted and the
+    # Bonus analysis reports the shared block instead.
+    first = create(client, path=("B5", "P2A"))
+    second = create(client, path=("B5", "P2A"), vehicle="V2")
 
     response = client.get("/schedule-analysis")
 
@@ -132,34 +134,39 @@ def test_schedule_analysis_reports_cross_vehicle_block_conflict(client):
     assert analysis["startTime"] == "2026-10-01T08:00:00+08:00"
     assert analysis["endTime"] == "2026-10-01T08:00:20+08:00"
     assert [vehicle["vehicleId"] for vehicle in analysis["vehicles"]] == ["V1", "V2"]
-    assert analysis["vehicles"][0]["segments"][1] == {
+    assert analysis["vehicles"][0]["segments"][0] == {
         "segmentType": "SERVICE",
         "serviceId": first["id"],
-        "pathIndex": 1,
-        "elementId": "B1",
+        "pathIndex": 0,
+        "elementId": "B5",
         "startTime": "2026-10-01T08:00:00+08:00",
         "endTime": "2026-10-01T08:00:10+08:00",
         "batteryStart": 80.0,
         "batteryEnd": 79.0,
     }
-    assert analysis["vehicles"][1]["segments"][1]["serviceId"] == second["id"]
+    assert analysis["vehicles"][1]["segments"][0]["serviceId"] == second["id"]
     assert analysis["conflicts"] == [
         {
             "conflictType": "BLOCK_OCCUPANCY",
-            "resourceId": "B1",
+            "resourceId": "B5",
             "startTime": "2026-10-01T08:00:00+08:00",
             "endTime": "2026-10-01T08:00:10+08:00",
             "vehicleIds": ["V1", "V2"],
             "serviceIds": [first["id"], second["id"]],
-            "elementIds": ["B1"],
-            "message": "Block B1 is occupied by multiple vehicles.",
+            "elementIds": ["B5"],
+            "message": "Block B5 is occupied by multiple vehicles.",
         }
     ]
 
 
-@pytest.mark.parametrize("value", [-1, 1.5, True, "10", None, 2147483648])
+@pytest.mark.parametrize("value", [-1, 1.5, True, "10", "", None, 2147483648])
 def test_invalid_block_values(client, value):
     assert client.put("/blocks/B1", json={"traversalSeconds": value}).status_code == 422
+    assert next(item for item in client.get("/blocks").json() if item["id"] == "B1")["traversalSeconds"] == 10
+
+
+def test_block_traversal_time_cannot_be_omitted(client):
+    assert client.put("/blocks/B1", json={}).status_code == 422
     assert next(item for item in client.get("/blocks").json() if item["id"] == "B1")["traversalSeconds"] == 10
 
 
@@ -220,7 +227,7 @@ def test_datetime_overflow_is_input_error(client, start):
 
 def test_overlap_and_failed_update_preserve_original(client):
     first = create(client)
-    second = create(client, vehicle="V2")
+    second = create(client, vehicle="V2", start=60)
     response = client.put(f'/services/{second["id"]}', json=payload())
     assert response.status_code == 409
     assert response.json()["detail"]["conflicting_service_id"] == first["id"]
@@ -228,6 +235,90 @@ def test_overlap_and_failed_update_preserve_original(client):
     assert client.post("/services", json=payload()).status_code == 409
     assert client.delete(f'/services/{first["id"]}').status_code == 204
     assert client.put(f'/services/{second["id"]}', json=payload()).status_code == 200
+
+
+@pytest.mark.parametrize("start", [0, 1, 9])
+def test_same_vehicle_overlap_create_rolls_back_nonzero_service(client, start):
+    first = create(client, path=("Y", "B1", "Y"))
+    assert first["timeline"][-1]["endTime"] > first["startTime"]
+    before = client.get("/services").json()
+
+    response = client.post("/services", json=payload(path=("Y", "B1", "Y"), start=start))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "VehicleOverlapError"
+    assert client.get("/services").json() == before
+
+
+def test_same_vehicle_overlap_update_rolls_back_and_touching_boundary_succeeds(client):
+    first = create(client, path=("Y", "B1", "Y"))
+    second = create(client, path=("Y", "B1", "Y"), start=30)
+    before = client.get("/services").json()
+
+    response = client.put(f'/services/{second["id"]}', json=payload(path=("Y", "B1", "Y"), start=5))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "VehicleOverlapError"
+    assert client.get("/services").json() == before
+    response = client.put(f'/services/{second["id"]}', json=payload(path=("Y", "B1", "Y"), start=10))
+    assert response.status_code == 200
+    assert response.json()["startTime"] == first["timeline"][-1]["endTime"]
+
+
+@pytest.mark.parametrize("update", [False, True])
+def test_location_discontinuity_rolls_back_create_and_update(client, update):
+    create(client, path=("Y", "B1", "Y"))
+    second = create(client, path=("Y", "B1", "Y"), start=30) if update else None
+    before = client.get("/services").json()
+    data = payload(path=("P1A", "B1", "Y"), start=30)
+
+    response = (client.put(f'/services/{second["id"]}', json=data) if update
+                else client.post("/services", json=data))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "VehicleLocationContinuityError"
+    assert client.get("/services").json() == before
+
+
+@pytest.mark.parametrize("block", ["B1", "B2"])
+def test_interlocking_create_rejects_same_group_and_rolls_back(client, block):
+    create(client, path=("Y", "B1", "Y"))
+    before = client.get("/services").json()
+
+    response = client.post("/services", json=payload(path=("Y", block, "Y"), vehicle="V2", start=5))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "InterlockingConflictError"
+    assert response.json()["detail"]["interlocking_group"] == "IG1"
+    assert client.get("/services").json() == before
+
+
+def test_interlocking_update_rolls_back_and_touching_boundary_succeeds(client):
+    first = create(client, path=("Y", "B1", "Y"))
+    second = create(client, path=("Y", "B2", "Y"), vehicle="V2", start=30)
+    before = client.get("/services").json()
+
+    response = client.put(f'/services/{second["id"]}', json=payload(path=("Y", "B2", "Y"), vehicle="V2", start=5))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "InterlockingConflictError"
+    assert client.get("/services").json() == before
+    response = client.put(f'/services/{second["id"]}', json=payload(path=("Y", "B2", "Y"), vehicle="V2", start=10))
+    assert response.status_code == 200
+    assert response.json()["startTime"] == first["timeline"][-1]["endTime"]
+
+
+@pytest.mark.parametrize("path", [("B3", "B5"), ("B5", "P2A")])
+def test_interlocking_allows_other_groups_and_ungrouped_blocks(client, path):
+    create(client, path=("Y", "B1", "Y"))
+    assert create(client, path=path, vehicle="V2")["id"]
+
+
+def test_cross_vehicle_ungrouped_block_occupancy_does_not_reject_write(client):
+    first = create(client, path=("B5", "P2A"))
+    second = create(client, path=("B5", "P2A"), vehicle="V2")
+    assert second["timeline"] == first["timeline"]
+    assert len(client.get("/services").json()) == 2
 
 
 def bridge(client):
@@ -284,12 +375,13 @@ def test_offsets_represent_same_instant(client):
     data["startTime"] = "2026-10-01T00:00:00Z"
     data["platformTimings"][0]["arrivalTime"] = "2026-10-01T02:00:10+02:00"
     data["platformTimings"][0]["departureTime"] = "2026-10-01T00:00:20+00:00"
+    # Compare representations without creating a cross-vehicle IG1 violation.
+    assert client.delete(f'/services/{first["id"]}').status_code == 204
     second = client.post("/services", json=data)
     assert second.status_code == 201
     assert second.json()["timeline"] == first["timeline"]
     assert second.json()["platformTimings"] == first["platformTimings"]
     assert client.get(f'/services/{second.json()["id"]}').json() == second.json()
-    data["vehicleId"] = "V1"
     assert client.post("/services", json=data).status_code == 409
 
 
@@ -343,7 +435,7 @@ def test_database_failure_rolls_back_and_recovers(client, monkeypatch):
     assert response.status_code == 500
     assert response.json()["detail"] == {"code": "DatabaseError", "message": "Database operation failed."}
     assert client.get(f'/services/{saved["id"]}').json() == saved
-    assert client.post("/services", json=payload(vehicle="V2")).status_code == 500
+    assert client.post("/services", json=payload(vehicle="V2", start=60)).status_code == 500
     assert len(client.get("/services").json()) == 1
     monkeypatch.setattr(ServiceRepository, "_write_path_snapshot", original)
     assert client.put(f'/services/{saved["id"]}', json=payload(start=60)).status_code == 200
@@ -371,7 +463,8 @@ def test_service_response_does_not_query_database_after_commit(client, monkeypat
     assert client.get(f'/services/{response.json()["id"]}').json() == response.json()
 
 
-def test_concurrent_conflicting_writes_use_distinct_sessions(client):
+@pytest.mark.parametrize("interlocking", [False, True])
+def test_concurrent_conflicting_writes_use_distinct_sessions(client, interlocking):
     barrier = Barrier(2)
     sessions = []
     def independent_session():
@@ -380,16 +473,19 @@ def test_concurrent_conflicting_writes_use_distinct_sessions(client):
             barrier.wait(timeout=10)
             yield session
     app.dependency_overrides[get_session] = independent_session
-    def write():
+    def write(data):
         with TestClient(app, raise_server_exceptions=False) as caller:
-            return caller.post("/services", json=payload()).status_code
+            return caller.post("/services", json=data).status_code
+    data = ([payload(path=("Y", "B1", "Y")),
+             payload(path=("Y", "B2", "Y"), vehicle="V2")]
+            if interlocking else [payload(), payload()])
     with ThreadPoolExecutor(max_workers=2) as workers:
-        results = list(workers.map(lambda _: write(), range(2)))
+        results = list(workers.map(write, data))
     app.dependency_overrides.clear()
     assert len(sessions) == 2 and sessions[0] is not sessions[1]
     assert sorted(results) == [201, 409]
     assert len(client.get("/services").json()) == 1
-    assert create(client, vehicle="V2")["id"]
+    assert create(client, vehicle="V2", path=("Y", "B2", "Y"), start=60)["id"]
 
 
 def test_block_write_waits_for_shared_lock(client):

@@ -57,6 +57,7 @@ class IncomparableScheduleTimeError(VehicleScheduleError):
 
 class ResourceType(StrEnum):
     VEHICLE = "VEHICLE"
+    INTERLOCKING = "INTERLOCKING"
 
 
 @dataclass(frozen=True)

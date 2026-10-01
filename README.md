@@ -3,8 +3,9 @@
 A vehicle scheduling system for managing services on a predefined railway topology.
 
 The system allows users to assign vehicles to routes at specific times while
-preventing mandatory vehicle schedule conflicts. Track block and interlocking
-conflicts are optional assignment bonuses and are deferred.
+preventing mandatory same-vehicle overlap, location discontinuity, and
+cross-vehicle interlocking conflicts. General block occupancy and battery
+conflicts are assignment Bonus reports, not write rejection rules.
 
 > This project is implemented as a technical assignment. The primary focus is correctness, domain modeling, scheduling rules, and clear engineering trade-offs rather than feature volume or UI complexity.
 
@@ -72,12 +73,13 @@ The initial implementation focuses on:
 - timeline calculation
 - vehicle scheduling conflicts
 - vehicle location continuity
+- interlocking group exclusivity across vehicles
 - unit-tested domain logic
 - minimal Angular interface
 
-Optional assignment features, including block occupancy and interlocking
-conflicts, are intentionally deferred until the mandatory scheduling behavior
-is complete.
+Optional assignment features include general block occupancy, low battery,
+and insufficient charge detection/reporting. Interlocking exclusivity belongs
+to the assignment's Track Map rules and is mandatory.
 
 ---
 
@@ -99,6 +101,8 @@ Derive Vehicle Occupancy
 Detect Vehicle Overlap
       ↓
 Validate Vehicle Continuity
+      ↓
+Validate Interlocking Exclusivity
       ↓
 Persist Service
 ```
@@ -147,9 +151,13 @@ Examples of resources:
 vehicle:V1
 ```
 
-The mandatory implementation uses occupancy across the complete service for a
-vehicle. The same model may later support bonus block and interlocking
-resources, but those conflict rules are not part of the current scope.
+Mandatory validation uses full-service vehicle occupancy and per-block
+interlocking group occupancy. Create/update returns 409 for same-vehicle
+overlap, location discontinuity, or cross-vehicle group overlap. Failed creates
+leave no service; failed updates preserve the original input and snapshot.
+Different blocks within the same group share one exclusive resource. Touching
+endpoints are allowed. Blocks outside a group are not rejected for general
+block occupancy, which remains Bonus detection/reporting.
 
 All scheduling intervals use half-open semantics:
 
@@ -434,8 +442,9 @@ It also covers:
 - block traversal configuration persistence
 - service repository CRUD and transaction rollback
 
-Block and interlocking conflict tests remain deferred with their bonus
-features.
+Targeted tests cover mandatory interlocking exclusivity, touching intervals,
+create/update rollback, and concurrent cross-vehicle writes. General block
+occupancy and battery reports remain separate Bonus behavior.
 
 ---
 
@@ -458,7 +467,10 @@ endpoint is available at `http://localhost:8000/health`.
 
 Backend startup applies pending Alembic migrations and runs an idempotent seed
 for the fixed topology and vehicles `V1`/`V2`. Seed execution does not overwrite
-configured block traversal times.
+configured block traversal times. Seeded blocks B1-B14 default to 20 seconds;
+existing null values are filled with 20. This is a project product default,
+not a duration supplied by the assignment. Block updates require a non-negative
+integer and cannot clear the value.
 
 Backend application and test files, and frontend source files, are mounted into
 their containers. FastAPI reloads when backend application code changes, and

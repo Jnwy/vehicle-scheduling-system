@@ -20,7 +20,7 @@ conflict and ask for clarification first.
 
 ## Current Status
 
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 | Phase | Status | Verification |
 | --- | --- | --- |
@@ -32,7 +32,8 @@ Last updated: 2026-10-01
 | FastAPI CRUD | Complete | Domain update, HTTP, PostgreSQL transactions, and concurrency verified |
 | Minimal Angular UI | Complete | Build and desktop/narrow browser checks pass |
 | End-to-end Docker verification | Complete | Integrated Docker build, browser workflow, restart, and persistence verified |
-| Block/interlocking conflicts | Deferred bonus | Not part of mandatory implementation |
+| Mandatory interlocking exclusivity | Implemented | Targeted domain/API rollback and concurrency tests pass |
+| General block occupancy/battery reports | Separate Bonus | Detect/report only; no mandatory write rejection |
 
 Current full test command:
 
@@ -77,11 +78,34 @@ FastAPI or persistence code:
   and timeline.
 - Mandatory vehicle validation rejects same-vehicle overlap and enforces
   predecessor/successor location continuity.
+- Mandatory Track Map interlocking validation rejects cross-vehicle overlapping
+  block intervals within the same group, including different blocks. Touching
+  endpoints and empty intervals are allowed.
 - Update validation excludes the existing service with the same non-null ID.
 - Full update validation checks the final schedules of both affected vehicles.
 - Domain logic is independent from FastAPI, SQLAlchemy, and database sessions.
 
 See `docs/DOMAIN_RULES.md` for the complete rules and assumptions.
+
+### Core/Bonus Boundary Correction: 2026-10-02
+
+The original assignment's Track Map interlocking constraint is mandatory.
+Same-vehicle overlap, location discontinuity, and cross-vehicle interlocking
+violations reject create/update with 409 and preserve persisted data. General
+block occupancy, low battery, and insufficient charge are Bonus detect/report
+behavior; they do not independently reject writes.
+
+A real HTTP reproduction with nonzero service duration confirmed that existing
+same-vehicle overlap and continuity already return 409; failed writes preserved
+data and touching intervals were accepted. The missing interlocking validator
+now compares per-block snapshot intervals using `[start, end)` within the
+existing shared advisory-lock transaction. No schema change is required.
+
+Targeted verification: `test_interlocking.py`, `test_vehicle_schedule.py`, and
+`test_api.py` passed 103 tests. Disabling only the new interlocking validator in
+an isolated test process made all three API create/update rejection cases fail,
+confirming the regression tests catch missing validation. No full-suite Docker,
+frontend, or browser verification was run for this correction.
 
 ## Completed Milestone: Persistence
 
@@ -111,7 +135,7 @@ the existing domain objects without moving business rules into the ORM layer.
 - Vehicle or topology structure management CRUD; block traversal configuration
   remains in scope
 - Authentication and authorization
-- Block/interlocking bonus conflicts
+- General block occupancy and battery Bonus reports
 - Production database deployment or tuning
 
 ### Timeline Storage Decision
@@ -131,6 +155,13 @@ contract.
 The assignment uses `V1` and `V2` as examples but does not define a complete
 vehicle inventory. This implementation explicitly defines the initial seeded
 inventory as `V1` and `V2`.
+
+### Seeded Block Default Decision
+
+Confirmed on 2026-10-02: blocks B1-B14 start at 20 seconds as a project product
+default, not an assignment-provided duration. Idempotent seed execution fills
+null values with 20 and preserves non-null custom values, including zero.
+Block API updates require a non-negative integer and cannot clear the value.
 
 ### Persistence Definition of Done
 

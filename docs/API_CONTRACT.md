@@ -68,10 +68,13 @@ and `interlockingGroup`, plus `connections` with `fromElementId` and
 `toElementId`. Only explicitly seeded directed edges are returned.
 
 GET /blocks returns objects with `id`, `traversalSeconds`, and
-`interlockingGroup`. Traversal may be null until configured. PUT accepts
+`interlockingGroup`. Seeded blocks B1-B14 default to 20 seconds as a project
+product choice, not an assignment-provided value. Seed execution fills existing
+null values and preserves custom values. PUT accepts
 `{"traversalSeconds":20}` and returns the updated block object. Values must be
 JSON integers from 0 through 2147483647 (PostgreSQL INTEGER range); booleans,
-floating point values, strings, null, negative values, and overflow are rejected.
+floating point values, strings (including empty strings), null, omitted values,
+negative values, and overflow are rejected with 422.
 Existing service snapshots remain stable after configuration writes.
 
 ## Errors
@@ -80,7 +83,7 @@ Existing service snapshots remain stable after configuration writes.
 | --- | --- |
 | 404 | URL service/block resource does not exist (a platform is not a block resource) |
 | 422 | Invalid request shape, vehicle reference, path, timing, or block configuration |
-| 409 | Vehicle overlap or location continuity failure |
+| 409 | Same-vehicle overlap, location continuity failure, or cross-vehicle interlocking group violation |
 | 500 | Unexpected database failure; generic public message |
 
 Domain/application errors return a `detail` object. `code` is the exception
@@ -101,6 +104,17 @@ Database failures return only
 `{"detail":{"code":"DatabaseError","message":"Database operation failed."}}`.
 Details are logged server-side. Failed writes leave persisted data unchanged.
 
+Mandatory create/update validation rejects same-vehicle overlap and location
+discontinuity before persistence. It also rejects cross-vehicle overlap of
+blocks in the same interlocking group with `InterlockingConflictError` and
+context `interlocking_group`, `candidate_service_id`, `conflicting_service_id`.
+Different blocks within one group are exclusive, as is the same grouped block.
+Only block intervals are compared, using `[start, end)`; touching endpoints and
+empty intervals are allowed. Updates exclude the original service. A rejected
+create leaves no service/child rows; a rejected update preserves the original.
+General block occupancy outside interlocking groups, low battery, and
+insufficient charge remain Bonus detection/reporting, not 409 write validation.
+
 ## Transactions and Concurrency
 
 Application functions own `session.begin()` and commit/rollback. Repository
@@ -108,7 +122,9 @@ methods flush but do not commit. Each request receives a fresh session.
 All service creates, updates, deletes, and block configuration writes acquire
 PostgreSQL transaction advisory lock `72634001` before reading current data.
 Validation and saving occur in the same transaction. The lock releases on
-commit or rollback. PostgreSQL's default READ COMMITTED isolation ensures a
+commit or rollback. Cross-vehicle interlocking checks use this same lock, so
+two overlapping group writers cannot both persist successfully.
+PostgreSQL's default READ COMMITTED isolation ensures a
 writer that waited for the lock subsequently reads the committed schedule.
 Create/update responses reuse the topology loaded within that transaction.
 They perform no post-commit database query that could misreport an already

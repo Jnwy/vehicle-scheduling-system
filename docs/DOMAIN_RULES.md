@@ -272,8 +272,12 @@ Track element identities, types, and connections are fixed seeded topology.
 Block `traversal_seconds` is mutable configuration because the assignment
 requires a read/write Block Configuration page.
 
-The assignment provides no initial traversal value. A seeded block remains
-unconfigured until a non-negative value is supplied.
+The assignment provides no initial traversal value. As a project product
+default confirmed on 2026-10-02, seeded blocks B1-B14 start at 20 seconds.
+Seed execution fills existing null block values with 20 seconds and preserves
+all non-null custom values, including zero. The API requires a non-negative
+integer and rejects null, empty strings, and omitted values; users cannot clear
+the configuration. This default is not a value supplied by the assignment.
 
 ---
 
@@ -295,10 +299,15 @@ The mandatory scheduling rules currently use:
 
 ```text
 VEHICLE
+INTERLOCKING
 ```
 
-Bonus schedule analysis derives `BLOCK` and `INTERLOCKING` occupancy directly
-from persisted service timeline snapshots. These occupancies are not stored as
+General `BLOCK` occupancy is Bonus detection/reporting. Interlocking group
+exclusivity is a mandatory Track Map constraint, including when vehicles use
+different blocks within the same group.
+
+Bonus schedule analysis derives general `BLOCK` occupancy directly from
+persisted service timeline snapshots. These occupancies are not stored as
 separate database state.
 
 ---
@@ -347,8 +356,10 @@ Conflict.
 
 A block may only be occupied by one service at a time.
 
-If services assigned to different vehicles occupy the same block during
-overlapping intervals, schedule analysis reports a block occupancy conflict.
+If different vehicles occupy the same block during overlapping intervals,
+Bonus analysis detects and reports the occupancy conflict. General block
+occupancy alone does not reject a service write. If the block belongs to an
+interlocking group, mandatory group exclusivity still applies.
 
 Bonus conflicts are warnings rather than write validation. The conflicting
 services remain persisted so Schedule Simulation can visualize the conflict.
@@ -357,7 +368,7 @@ overlap or location discontinuity before persistence.
 
 ---
 
-# 8. Interlocking Conflict
+# 8. Interlocking Conflict (Mandatory)
 
 Blocks may belong to an interlocking group.
 
@@ -379,14 +390,19 @@ This should be treated as:
 resource = interlocking:IG1
 ```
 
-Schedule analysis reports overlapping occupancy of different blocks in the
-same group as an interlocking conflict. When both vehicles occupy the same
-block, the block conflict is reported without a duplicate interlocking warning.
+This is a mandatory constraint from the assignment's Track Map, not Bonus 1.
+Create/update must reject overlapping block occupancy by different vehicles
+within the same group, including occupancy of the same grouped block.
+Use each block occurrence's persisted timeline interval, not the whole service
+interval. Intervals use `[start, end)`; touching and empty intervals do not
+conflict. Updates exclude the original service being replaced. Blocks in
+different groups or outside any group do not cause an interlocking violation.
+The API returns 409 and rolls back the failed write.
 
-Like block conflicts, interlocking conflicts are persisted schedule warnings
-and do not reject the service write.
+Because violations are rejected at write time, schedule analysis does not
+report a separate interlocking warning.
 
-## 8.1 Battery Analysis
+## 8.1 Battery Analysis (Bonus)
 
 Battery state is derived for each vehicle across its ordered services:
 
@@ -472,7 +488,8 @@ When creating or updating a service:
 4. derive full-service vehicle occupancy
 5. validate vehicle time conflicts
 6. validate vehicle location continuity
-7. persist only if all checks succeed
+7. validate cross-vehicle interlocking group exclusivity
+8. persist only if all checks succeed
 ```
 
 Do not persist an invalid service and then attempt to repair it.
@@ -481,9 +498,10 @@ Existing services are treated as previously validated data. Creation checks
 whether the candidate can be inserted among them. Update validation also checks
 the remaining old schedule after replacing the target (Rule 11.2).
 
-Bonus block, interlocking, and battery analysis runs from the authoritative
-persisted schedule after writes and on `GET /schedule-analysis`. It deliberately
-does not participate in this mandatory write-validation pipeline.
+Mandatory same-vehicle and interlocking failures reject the write before
+persistence. Failed create leaves no service or child data; failed update
+preserves the original input and timeline snapshot. General block occupancy
+and battery Bonus analysis detects/reports separately and does not reject writes.
 
 ---
 
@@ -549,6 +567,9 @@ Mandatory scheduling tests include:
   allow a continuous pair and first/last/only-service deletion; verify rejected
   deletion preserves stored data and other vehicles do not affect the check
 
-Bonus domain tests cover block occupancy, interlocking groups, half-open
-boundaries, battery consumption and limits, fractional Yard charging, low
-battery, and insufficient departure charge.
+Bonus domain tests cover general block occupancy, half-open boundaries,
+battery consumption and limits, fractional Yard charging, low battery, and
+insufficient departure charge.
+
+Interlocking validation tests cover same-group overlaps, touching boundaries,
+update self-exclusion, rollback, and concurrent cross-vehicle writes.

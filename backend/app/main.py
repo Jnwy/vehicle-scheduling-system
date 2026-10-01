@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import router
 from app.application import ResourceNotFoundError, UnknownVehicleError
+from app.domain.interlocking import InterlockingConflictError
 from app.domain.path_validation import PathValidationError
 from app.domain.timeline import PlatformTimingError, TimelineConfigurationError
 from app.domain.vehicle_schedule import (
@@ -37,6 +38,7 @@ ERROR_STATUS = {
     BlockConfigurationError: 422,
     VehicleOverlapError: 409,
     VehicleLocationContinuityError: 409,
+    InterlockingConflictError: 409,
 }
 
 

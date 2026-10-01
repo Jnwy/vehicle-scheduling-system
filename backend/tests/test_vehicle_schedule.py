@@ -65,6 +65,23 @@ def test_half_open_occupancies_overlap_when_time_is_shared():
     assert occupancies_overlap(second, first)
 
 
+@pytest.mark.parametrize("start", [0, 1, 9])
+def test_nonzero_same_vehicle_services_reject_overlap(start):
+    existing = make_schedule(service_id=1, end_seconds=10)
+    candidate = make_schedule(service_id=None, start_seconds=start, end_seconds=start + 10)
+    assert candidate.end_time > candidate.start_time
+
+    with pytest.raises(VehicleOverlapError):
+        validate_vehicle_schedule(candidate, [existing])
+
+
+def test_nonzero_same_vehicle_services_allow_continuous_touching_boundary():
+    existing = make_schedule(service_id=1, end_seconds=10)
+    candidate = make_schedule(service_id=None, start_location=existing.end_location,
+                              start_seconds=10, end_seconds=20)
+    validate_vehicle_schedule(candidate, [existing])
+
+
 def test_zero_duration_occupancy_does_not_overlap_nonempty_occupancy():
     empty = vehicle_occupancy(
         make_schedule(service_id=1, start_seconds=10, end_seconds=10)
