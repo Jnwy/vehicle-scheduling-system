@@ -11,7 +11,12 @@ interface Point {
 
 const VIEWBOX_WIDTH = 1040;
 const VIEWBOX_HEIGHT = 360;
+// Headroom above the top row so a second stacked vehicle marker is not clipped.
+const VIEWBOX_TOP_MARGIN = 40;
 
+// Crossover blocks sit on the straight line between their two neighbours and
+// away from its midpoint, so each pair (B8/B10, B4/B13) draws as an X as in
+// docs/topology.png without the two block nodes landing on the crossing.
 const POINTS: Record<string, Point> = {
   Y: { x: 980, y: 65 },
   B1: { x: 880, y: 65 },
@@ -19,20 +24,20 @@ const POINTS: Record<string, Point> = {
   P1A: { x: 735, y: 65 },
   P1B: { x: 735, y: 255 },
   B3: { x: 620, y: 65 },
-  B4: { x: 565, y: 115 },
+  B4: { x: 574, y: 122 },
   B5: { x: 505, y: 65 },
   P2A: { x: 395, y: 65 },
   B6: { x: 285, y: 65 },
   B7: { x: 175, y: 65 },
-  B8: { x: 175, y: 165 },
+  B8: { x: 138, y: 198 },
   P3A: { x: 75, y: 65 },
   P3B: { x: 75, y: 255 },
-  B10: { x: 175, y: 155 },
+  B10: { x: 222, y: 198 },
   B9: { x: 175, y: 255 },
   B11: { x: 285, y: 255 },
   P2B: { x: 395, y: 255 },
   B12: { x: 505, y: 255 },
-  B13: { x: 675, y: 115 },
+  B13: { x: 666, y: 122 },
   B14: { x: 620, y: 255 },
 };
 
@@ -41,10 +46,13 @@ const POINTS: Record<string, Point> = {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="map-frame">
+    <p *ngIf="topologyMissing" class="map-empty" role="status">
+      Track topology is not available, so the map cannot be drawn. Check that the backend is running, then reload the page.
+    </p>
+    <div class="map-frame" [hidden]="topologyMissing">
       <svg #svg role="img" [attr.aria-label]="interactive ? 'Service path editing map' : 'Vehicle schedule playback map'"></svg>
     </div>
-    <div class="legend" aria-label="Track map legend">
+    <div class="legend" [hidden]="topologyMissing" aria-label="Track map legend">
       <span><i class="yard"></i>Yard</span>
       <span><i class="platform"></i>Platform</span>
       <span><i class="block"></i>Block</span>
@@ -57,7 +65,9 @@ const POINTS: Record<string, Point> = {
   styles: [`
     :host { display: block; min-width: 0; }
     .map-frame { width: 100%; overflow: hidden; border: 1px solid #d5dee7; border-radius: 8px; background: #f8fafc; }
-    svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 360; min-height: 260px; }
+    svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 400; min-height: 260px; }
+    .map-empty { margin: 0; padding: 28px 16px; border: 1px dashed #c3ced9; border-radius: 8px; background: #f8fafc; color: #536475; font-size: 14px; font-weight: 700; text-align: center; }
+    [hidden] { display: none !important; }
     .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: #536475; font-size: 12px; font-weight: 700; }
     .legend span { display: inline-flex; align-items: center; gap: 5px; }
     .legend i { width: 13px; height: 13px; border: 2px solid #506172; border-radius: 3px; background: #fff; }
@@ -69,7 +79,7 @@ const POINTS: Record<string, Point> = {
     .legend .vehicle { border-radius: 50%; background: #4e79a7; }
     .legend .conflict { border-color: #b42318; background: #fee4e2; }
     @media (max-width: 680px) {
-      svg { aspect-ratio: 520 / 980; min-height: 0; }
+      svg { aspect-ratio: 520 / 1020; min-height: 0; }
     }
   `],
 })
@@ -83,6 +93,10 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   @Input() conflictElementIds: string[] = [];
   @Input() mapPurpose: 'editor' | 'viewer' = 'editor';
   @Output() readonly elementSelected = new EventEmitter<string>();
+
+  get topologyMissing(): boolean {
+    return this.topology.elements.length === 0;
+  }
 
   ngAfterViewInit(): void {
     this.render();
@@ -108,7 +122,9 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     const compact = window.matchMedia('(max-width: 680px)').matches;
     const points = this.layoutPoints(compact);
     svg.selectAll('*').remove();
-    svg.attr('viewBox', compact ? '0 0 520 980' : `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`);
+    svg.attr('viewBox', compact
+      ? `0 ${-VIEWBOX_TOP_MARGIN} 520 ${980 + VIEWBOX_TOP_MARGIN}`
+      : `0 ${-VIEWBOX_TOP_MARGIN} ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT + VIEWBOX_TOP_MARGIN}`);
     this.addMarkers(svg);
 
     const elements = this.topology.elements.filter((element) => points[element.id] !== undefined);
@@ -193,7 +209,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-weight', 800)
       .text('edit end');
 
-    this.drawVehicles(svg, points);
+    this.drawVehicles(svg, points, compact);
   }
 
   private addMarkers(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
@@ -249,41 +265,61 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   private drawVehicles(
     svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
     points: Record<string, Point>,
+    compact: boolean,
   ): void {
     const color = d3.scaleOrdinal<string, string>(d3.schemeTableau10);
-    const vehiclesByElement = d3.group(this.vehicles, (vehicle) => vehicle.elementId);
+    const vehicles = this.vehicles.filter((vehicle) => points[vehicle.elementId]);
+    const elementCounts = new Map<string, number>();
     const markers = svg.append('g')
       .attr('class', 'vehicles')
       .selectAll('g')
-      .data(this.vehicles.filter((vehicle) => points[vehicle.elementId]))
+      .data(vehicles)
       .join('g')
       .attr('transform', (vehicle) => {
+        // Vehicles on the same element stack upwards so a conflict shows every vehicle.
+        const count = elementCounts.get(vehicle.elementId) ?? 0;
+        elementCounts.set(vehicle.elementId, count + 1);
         const start = points[vehicle.elementId];
         const end = points[vehicle.nextElementId] ?? start;
         const x = start.x + (end.x - start.x) * vehicle.progress;
         const y = start.y + (end.y - start.y) * vehicle.progress;
-        const lane = vehiclesByElement.get(vehicle.elementId)?.indexOf(vehicle) ?? 0;
-        return `translate(${x},${y + (lane % 2 === 0 ? -28 : 28)})`;
+        if (compact) {
+          // Tracks run vertically here, so labels sit beside the track, towards the map centre.
+          return `translate(${x + (x < 260 ? 64 : -64)},${y - count * 32})`;
+        }
+        return `translate(${x},${y - 38 - count * 32})`;
       });
+    markers.append('rect')
+      .attr('x', -35)
+      .attr('y', -15)
+      .attr('width', 70)
+      .attr('height', 30)
+      .attr('rx', 6)
+      .attr('fill', '#ffffff')
+      .attr('stroke', (vehicle) => color(vehicle.vehicleId))
+      .attr('stroke-width', 2);
     markers.append('circle')
-      .attr('r', 13)
+      .attr('cx', -20)
+      .attr('r', 10)
       .attr('fill', (vehicle) => color(vehicle.vehicleId))
       .attr('stroke', '#fff')
-      .attr('stroke-width', 3);
+      .attr('stroke-width', 2);
     markers.append('text')
+      .attr('x', -20)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', '#fff')
-      .attr('font-size', 9)
+      .attr('font-size', 8)
       .attr('font-weight', 800)
       .text((vehicle) => vehicle.vehicleId);
     markers.append('text')
-      .attr('x', 18)
-      .attr('y', 4)
-      .attr('fill', '#1f2d3a')
+      .attr('x', -4)
+      .attr('text-anchor', 'start')
+      .attr('dominant-baseline', 'central')
+      .attr('fill', '#17202a')
       .attr('font-size', 11)
       .attr('font-weight', 800)
-      .text((vehicle) => `${vehicle.vehicleId} @ ${vehicle.elementId}`);
+      .text((vehicle) => vehicle.elementId);
   }
 
   private layoutPoints(compact: boolean): Record<string, Point> {
