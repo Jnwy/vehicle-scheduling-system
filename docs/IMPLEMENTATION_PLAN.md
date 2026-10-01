@@ -61,6 +61,17 @@ aed4abc feat: expose transactional scheduling API
 dd455c6 docs: separate mandatory rules from bonus conflicts
 ```
 
+## Next Concrete Action: Review Follow-ups (2026-10-02)
+
+A full review of `main` at `2d1fe00` recorded seven findings (F1-F7) and a
+phased fix plan in [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md). No fix is
+implemented yet.
+
+Next action: get user authorization for Phase A (F1 stale platform timings on
+edit, F2 user-readable error messages), then resolve the open decisions listed
+in that document before Phases B and C. This supersedes the older "Next
+Concrete Action" section below.
+
 ## Active Handoff: Integration Recovery (2026-10-02)
 
 A previous agent stopped in the middle of integrating parallel work onto
