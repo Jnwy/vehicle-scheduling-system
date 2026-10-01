@@ -106,6 +106,57 @@ def test_complete_crud_and_seed_reads(client):
     assert client.get(f'/services/{first["id"]}').status_code == 404
 
 
+def test_empty_schedule_analysis_includes_seeded_vehicles(client):
+    response = client.get("/schedule-analysis")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "startTime": None,
+        "endTime": None,
+        "vehicles": [
+            {"vehicleId": "V1", "segments": []},
+            {"vehicleId": "V2", "segments": []},
+        ],
+        "conflicts": [],
+    }
+
+
+def test_schedule_analysis_reports_cross_vehicle_block_conflict(client):
+    first = create(client)
+    second = create(client, vehicle="V2")
+
+    response = client.get("/schedule-analysis")
+
+    assert response.status_code == 200
+    analysis = response.json()
+    assert analysis["startTime"] == "2026-10-01T08:00:00+08:00"
+    assert analysis["endTime"] == "2026-10-01T08:00:20+08:00"
+    assert [vehicle["vehicleId"] for vehicle in analysis["vehicles"]] == ["V1", "V2"]
+    assert analysis["vehicles"][0]["segments"][1] == {
+        "segmentType": "SERVICE",
+        "serviceId": first["id"],
+        "pathIndex": 1,
+        "elementId": "B1",
+        "startTime": "2026-10-01T08:00:00+08:00",
+        "endTime": "2026-10-01T08:00:10+08:00",
+        "batteryStart": 80.0,
+        "batteryEnd": 79.0,
+    }
+    assert analysis["vehicles"][1]["segments"][1]["serviceId"] == second["id"]
+    assert analysis["conflicts"] == [
+        {
+            "conflictType": "BLOCK_OCCUPANCY",
+            "resourceId": "B1",
+            "startTime": "2026-10-01T08:00:00+08:00",
+            "endTime": "2026-10-01T08:00:10+08:00",
+            "vehicleIds": ["V1", "V2"],
+            "serviceIds": [first["id"], second["id"]],
+            "elementIds": ["B1"],
+            "message": "Block B1 is occupied by multiple vehicles.",
+        }
+    ]
+
+
 @pytest.mark.parametrize("value", [-1, 1.5, True, "10", None, 2147483648])
 def test_invalid_block_values(client, value):
     assert client.put("/blocks/B1", json={"traversalSeconds": value}).status_code == 422

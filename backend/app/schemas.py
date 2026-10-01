@@ -76,3 +76,37 @@ class TimelineOutput(BaseModel):
 class ServiceOutput(ServiceInput):
     id: int
     timeline: list[TimelineOutput]
+
+
+class SimulationSegmentOutput(BaseModel):
+    segmentType: str
+    serviceId: int | None
+    pathIndex: int | None
+    elementId: str
+    startTime: datetime
+    endTime: datetime
+    batteryStart: float
+    batteryEnd: float
+
+
+class VehicleSimulationOutput(BaseModel):
+    vehicleId: str
+    segments: list[SimulationSegmentOutput]
+
+
+class ScheduleConflictOutput(BaseModel):
+    conflictType: str
+    resourceId: str | None
+    startTime: datetime
+    endTime: datetime
+    vehicleIds: list[str]
+    serviceIds: list[int]
+    elementIds: list[str]
+    message: str
+
+
+class ScheduleAnalysisOutput(BaseModel):
+    startTime: datetime | None
+    endTime: datetime | None
+    vehicles: list[VehicleSimulationOutput]
+    conflicts: list[ScheduleConflictOutput]

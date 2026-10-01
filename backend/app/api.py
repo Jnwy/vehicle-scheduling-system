@@ -5,10 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.application import configure_block, delete_service, list_vehicles, save_service
 from app.domain.models import RailwayTopology, TrackElementType
+from app.domain.schedule_analysis import analyze_schedule
 from app.domain.vehicle_schedule import ServiceSchedule
 from app.persistence.database import SessionFactory
 from app.persistence.repositories import ServiceNotFoundError, ServiceRepository, TopologyRepository
-from app.schemas import BlockInput, PlatformTimingInput, ServiceInput, ServiceOutput, TimelineOutput, taipei_time
+from app.schemas import (
+    BlockInput, PlatformTimingInput, ScheduleAnalysisOutput, ScheduleConflictOutput,
+    ServiceInput, ServiceOutput, SimulationSegmentOutput, TimelineOutput,
+    VehicleSimulationOutput, taipei_time,
+)
 
 
 router = APIRouter()
@@ -80,6 +85,50 @@ def remove_service(service_id: int, session: DatabaseSession) -> Response:
 @router.get("/vehicles")
 def vehicles(session: DatabaseSession) -> list[dict[str, str]]:
     return list_vehicles(session)
+
+
+@router.get("/schedule-analysis", response_model=ScheduleAnalysisOutput)
+def schedule_analysis(session: DatabaseSession) -> ScheduleAnalysisOutput:
+    repository = ServiceRepository(session)
+    topology = TopologyRepository(session).get()
+    vehicle_ids = [item["id"] for item in list_vehicles(session)]
+    analysis = analyze_schedule(repository.list(), topology, vehicle_ids)
+    return ScheduleAnalysisOutput(
+        startTime=taipei_time(analysis.start_time) if analysis.start_time else None,
+        endTime=taipei_time(analysis.end_time) if analysis.end_time else None,
+        vehicles=[
+            VehicleSimulationOutput(
+                vehicleId=vehicle.vehicle_id,
+                segments=[
+                    SimulationSegmentOutput(
+                        segmentType=segment.segment_type.value,
+                        serviceId=segment.service_id,
+                        pathIndex=segment.path_index,
+                        elementId=segment.element_id,
+                        startTime=taipei_time(segment.start_time),
+                        endTime=taipei_time(segment.end_time),
+                        batteryStart=segment.battery_start,
+                        batteryEnd=segment.battery_end,
+                    )
+                    for segment in vehicle.segments
+                ],
+            )
+            for vehicle in analysis.vehicles
+        ],
+        conflicts=[
+            ScheduleConflictOutput(
+                conflictType=conflict.conflict_type.value,
+                resourceId=conflict.resource_id,
+                startTime=taipei_time(conflict.start_time),
+                endTime=taipei_time(conflict.end_time),
+                vehicleIds=list(conflict.vehicle_ids),
+                serviceIds=list(conflict.service_ids),
+                elementIds=list(conflict.element_ids),
+                message=conflict.message,
+            )
+            for conflict in analysis.conflicts
+        ],
+    )
 
 
 @router.get("/topology")
