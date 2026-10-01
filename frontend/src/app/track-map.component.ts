@@ -1,3 +1,4 @@
+import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
 import * as d3 from 'd3';
 
@@ -9,51 +10,54 @@ interface Point {
 }
 
 const VIEWBOX_WIDTH = 1040;
-const VIEWBOX_HEIGHT = 500;
+const VIEWBOX_HEIGHT = 360;
 
 const POINTS: Record<string, Point> = {
-  Y: { x: 970, y: 250 },
-  B1: { x: 895, y: 170 },
-  B2: { x: 895, y: 330 },
-  P1A: { x: 805, y: 130 },
-  P1B: { x: 805, y: 370 },
-  B3: { x: 715, y: 110 },
-  B4: { x: 715, y: 330 },
-  B5: { x: 625, y: 155 },
-  P2A: { x: 530, y: 130 },
-  B6: { x: 435, y: 130 },
-  B7: { x: 345, y: 90 },
-  B8: { x: 345, y: 205 },
-  P3A: { x: 245, y: 90 },
-  P3B: { x: 245, y: 230 },
-  B10: { x: 285, y: 320 },
-  B9: { x: 285, y: 410 },
-  B11: { x: 430, y: 365 },
-  P2B: { x: 530, y: 365 },
-  B12: { x: 625, y: 365 },
-  B13: { x: 705, y: 225 },
-  B14: { x: 715, y: 410 },
+  Y: { x: 980, y: 65 },
+  B1: { x: 880, y: 65 },
+  B2: { x: 845, y: 165 },
+  P1A: { x: 735, y: 65 },
+  P1B: { x: 735, y: 255 },
+  B3: { x: 620, y: 65 },
+  B4: { x: 565, y: 115 },
+  B5: { x: 505, y: 65 },
+  P2A: { x: 395, y: 65 },
+  B6: { x: 285, y: 65 },
+  B7: { x: 175, y: 65 },
+  B8: { x: 175, y: 165 },
+  P3A: { x: 75, y: 65 },
+  P3B: { x: 75, y: 255 },
+  B10: { x: 175, y: 155 },
+  B9: { x: 175, y: 255 },
+  B11: { x: 285, y: 255 },
+  P2B: { x: 395, y: 255 },
+  B12: { x: 505, y: 255 },
+  B13: { x: 675, y: 115 },
+  B14: { x: 620, y: 255 },
 };
 
 @Component({
   selector: 'app-track-map',
   standalone: true,
+  imports: [CommonModule],
   template: `
     <div class="map-frame">
-      <svg #svg role="img" aria-label="Interactive directed railway track map"></svg>
+      <svg #svg role="img" [attr.aria-label]="interactive ? 'Service path editing map' : 'Vehicle schedule playback map'"></svg>
     </div>
     <div class="legend" aria-label="Track map legend">
       <span><i class="yard"></i>Yard</span>
       <span><i class="platform"></i>Platform</span>
       <span><i class="block"></i>Block</span>
-      <span><i class="candidate"></i>Available next</span>
+      <span *ngIf="mapPurpose === 'editor'"><i class="candidate"></i>Available next</span>
+      <span *ngIf="mapPurpose === 'editor'"><i class="path-end"></i>Editing path endpoint</span>
+      <span *ngIf="mapPurpose === 'viewer'"><i class="vehicle"></i>Playback vehicle position</span>
       <span><i class="conflict"></i>Conflict</span>
     </div>
   `,
   styles: [`
     :host { display: block; min-width: 0; }
     .map-frame { width: 100%; overflow: hidden; border: 1px solid #d5dee7; border-radius: 8px; background: #f8fafc; }
-    svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 500; min-height: 300px; }
+    svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 360; min-height: 260px; }
     .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: #536475; font-size: 12px; font-weight: 700; }
     .legend span { display: inline-flex; align-items: center; gap: 5px; }
     .legend i { width: 13px; height: 13px; border: 2px solid #506172; border-radius: 3px; background: #fff; }
@@ -61,6 +65,8 @@ const POINTS: Record<string, Point> = {
     .legend .platform { background: #e6edf5; }
     .legend .block { border-radius: 50%; background: #f0f4e9; }
     .legend .candidate { border-color: #13815b; box-shadow: 0 0 0 2px #bce8d6; }
+    .legend .path-end { border-color: #0b6f8f; background: #dff3f8; }
+    .legend .vehicle { border-radius: 50%; background: #4e79a7; }
     .legend .conflict { border-color: #b42318; background: #fee4e2; }
     @media (max-width: 680px) {
       svg { aspect-ratio: 520 / 980; min-height: 0; }
@@ -75,6 +81,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   @Input() interactive = false;
   @Input() vehicles: PlaybackVehicleState[] = [];
   @Input() conflictElementIds: string[] = [];
+  @Input() mapPurpose: 'editor' | 'viewer' = 'editor';
   @Output() readonly elementSelected = new EventEmitter<string>();
 
   ngAfterViewInit(): void {
@@ -111,6 +118,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     const selectedIds = new Set(this.selectedPath);
     const conflictIds = new Set(this.conflictElementIds);
     const eligibleIds = this.eligibleElementIds();
+    const playbackIds = new Set(this.vehicles.map((vehicle) => vehicle.elementId));
 
     this.drawStationBands(svg, compact);
     svg.append('g')
@@ -152,9 +160,9 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
       .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
       .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
-      .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds))
-      .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds))
-      .attr('stroke-width', (element) => eligibleIds.has(element.id) || selectedIds.has(element.id) || conflictIds.has(element.id) ? 4 : 2);
+      .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds))
+      .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
+      .attr('stroke-width', (element) => eligibleIds.has(element.id) || selectedIds.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2);
 
     node.append('text')
       .attr('text-anchor', 'middle')
@@ -174,6 +182,16 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-size', 11)
       .attr('font-weight', 800)
       .text((element) => visits.get(element.id)?.map((item) => item.index).join(',') ?? '');
+
+    node.filter((element) => this.mapPurpose === 'editor' && this.selectedPath.at(-1) === element.id)
+      .append('text')
+      .attr('x', 0)
+      .attr('y', 35)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#0b6f8f')
+      .attr('font-size', 10)
+      .attr('font-weight', 800)
+      .text('edit end');
 
     this.drawVehicles(svg, points);
   }
@@ -200,14 +218,14 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   ): void {
     const stations = compact
       ? [
-          { id: 'S1', x: 60, y: 150, width: 400, height: 105 },
-          { id: 'S2', x: 60, y: 460, width: 400, height: 105 },
-          { id: 'S3', x: 60, y: 760, width: 400, height: 120 },
+          { id: 'S1', x: 30, y: 225, width: 460, height: 95 },
+          { id: 'S2', x: 30, y: 520, width: 460, height: 95 },
+          { id: 'S3', x: 30, y: 800, width: 460, height: 95 },
         ]
       : [
-          { id: 'S3', x: 180, y: 45, width: 145, height: 235 },
-          { id: 'S2', x: 485, y: 75, width: 90, height: 335 },
-          { id: 'S1', x: 765, y: 75, width: 80, height: 340 },
+          { id: 'S3', x: 10, y: 20, width: 130, height: 280 },
+          { id: 'S2', x: 350, y: 20, width: 90, height: 280 },
+          { id: 'S1', x: 690, y: 20, width: 90, height: 280 },
         ];
     const groups = svg.append('g').selectAll('g').data(stations).join('g');
     groups.append('rect')
@@ -233,6 +251,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     points: Record<string, Point>,
   ): void {
     const color = d3.scaleOrdinal<string, string>(d3.schemeTableau10);
+    const vehiclesByElement = d3.group(this.vehicles, (vehicle) => vehicle.elementId);
     const markers = svg.append('g')
       .attr('class', 'vehicles')
       .selectAll('g')
@@ -243,7 +262,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         const end = points[vehicle.nextElementId] ?? start;
         const x = start.x + (end.x - start.x) * vehicle.progress;
         const y = start.y + (end.y - start.y) * vehicle.progress;
-        return `translate(${x},${y - 28})`;
+        const lane = vehiclesByElement.get(vehicle.elementId)?.indexOf(vehicle) ?? 0;
+        return `translate(${x},${y + (lane % 2 === 0 ? -28 : 28)})`;
       });
     markers.append('circle')
       .attr('r', 13)
@@ -257,6 +277,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-size', 9)
       .attr('font-weight', 800)
       .text((vehicle) => vehicle.vehicleId);
+    markers.append('text')
+      .attr('x', 18)
+      .attr('y', 4)
+      .attr('fill', '#1f2d3a')
+      .attr('font-size', 11)
+      .attr('font-weight', 800)
+      .text((vehicle) => `${vehicle.vehicleId} @ ${vehicle.elementId}`);
   }
 
   private layoutPoints(compact: boolean): Record<string, Point> {
@@ -267,8 +294,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       Object.entries(POINTS).map(([id, point]) => [
         id,
         {
-          x: 55 + ((point.y - 45) / 365) * 410,
-          y: 55 + ((970 - point.x) / 790) * 870,
+          x: 75 + ((point.y - 65) / 190) * 360,
+          y: 55 + ((980 - point.x) / 905) * 790,
         },
       ]),
     );
@@ -295,9 +322,17 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     }
   }
 
-  private nodeFill(element: TrackElementResponse, selected: Set<string>, conflicts: Set<string>): string {
+  private nodeFill(
+    element: TrackElementResponse,
+    selected: Set<string>,
+    conflicts: Set<string>,
+    playback: Set<string>,
+  ): string {
     if (conflicts.has(element.id)) {
       return '#fee4e2';
+    }
+    if (playback.has(element.id)) {
+      return '#dff3f8';
     }
     if (selected.has(element.id)) {
       return '#ccebdd';
@@ -316,9 +351,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     eligible: Set<string>,
     selected: Set<string>,
     conflicts: Set<string>,
+    playback: Set<string>,
   ): string {
     if (conflicts.has(element.id)) {
       return '#b42318';
+    }
+    if (playback.has(element.id)) {
+      return '#0b6f8f';
     }
     if (selected.has(element.id)) {
       return '#13795b';

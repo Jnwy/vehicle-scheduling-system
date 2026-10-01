@@ -31,6 +31,7 @@ Last updated: 2026-10-02
 | Persistence | Complete, reviewed | P0-P3 verified; review fixes verified in PostgreSQL and Docker |
 | FastAPI CRUD | Complete | Domain update, HTTP, PostgreSQL transactions, and concurrency verified |
 | Minimal Angular UI | Complete | Build and desktop/narrow browser checks pass |
+| Three-page Angular routes | Implemented; user acceptance pending | One final `npm run build` passes; route interactions and visual checks not rerun |
 | End-to-end Docker verification | Complete | Integrated Docker build, browser workflow, restart, and persistence verified |
 | Mandatory interlocking exclusivity | Implemented | Targeted domain/API rollback and concurrency tests pass |
 | General block occupancy/battery reports | Separate Bonus | Detect/report only; no mandatory write rejection |
@@ -334,9 +335,70 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 
 ### Next Concrete Action
 
-The mandatory baseline is complete on `codex/basic-version-integration`. No
-push is authorized. User acceptance is next. Block and interlocking conflict
-rules remain an optional bonus and require an explicit phase request.
+The mandatory baseline is complete on `codex/basic-version-integration`.
+The routed frontend follow-up is implemented locally; user acceptance of the
+three routes and map presentation is next. The user has authorized a local
+frontend commit and integration through the coordination thread; no push is
+authorized. The routed frontend, time-entry simplification, and non-empty block
+configuration form one verified frontend workflow checkpoint.
+This follow-up preserves the existing bonus analysis/playback code without
+adding new bonus rules or changing the backend.
+
+### Routed Three-Page Frontend
+
+- Editor time-entry follow-up: new services default to the next five-minute
+  boundary in Taipei. Every platform occurrence is generated from the ordered
+  path with a default 60-second dwell (zero is allowed). Arrival/departure
+  previews follow configured block times and preceding platform dwell, and are
+  sent using the unchanged `platformTimings` API schema. Start/path/dwell edits
+  and refreshed block configuration recalculate the preview. Opening an existing
+  service derives its dwell from saved timings and preserves its saved times
+  until a timing input or relevant block configuration changes. Missing block
+  configuration is shown with a link to `/blocks` and prevents submission.
+  No backend/domain/dependency changes were made. Existing Docker development
+  compilation passed; focused timing checks passed for five-minute defaults,
+  Taipei midnight, repeated platform visits, zero/invalid dwell, and missing
+  blocks. No persistent test files, additional production build, browser checks,
+  screenshots, backend tests, or full Docker verification were added/run.
+- `/` redirects to `/editor`. `/editor`, `/schedule`, and `/blocks` are separate
+  standalone route components with shared navigation and active-link state.
+  The existing Angular dev server provides the SPA fallback for direct URLs;
+  direct-route refresh behavior is pending user acceptance.
+- Editor retains service create/update/delete, vehicle and start time inputs,
+  ordered path editing, platform occurrence timings, saved timelines, and
+  409/422/general error feedback. Successful writes reload server data.
+- Viewer has no schedule mutation controls. It retains saved service timelines,
+  playback, vehicle positions, battery state, and bonus conflict warnings.
+  Leaving the route cancels playback and pending page subscriptions.
+- Blocks retains independent per-block traversal configuration, loading/saving
+  states, and success/error feedback. Blank input is not treated as zero.
+  Saving reloads block configuration and its topology reference; persisted
+  service timeline snapshots remain unchanged.
+- Shared API calls and datetime/error formatting were extracted without
+  changing endpoint/request contracts or Asia/Taipei input interpretation.
+  Each route reloads server data on entry. Unsaved form drafts are local to the
+  route component and are discarded when navigating away.
+- Map presentation keeps S3/S2/S1 left-to-right with Yard on the right, aligns
+  crossover block positions and compact station bands, and distinguishes the
+  editing endpoint from playback vehicle labels. Two vehicles on the same
+  element use separate marker offsets. Directed connections are unchanged.
+- Dependency installation uses `npm ci` and the existing `package-lock.json`.
+  The Homebrew Node ICU problem is bypassed using the bundled Node executable
+  with the existing npm CLI, not another package manager. Package manifests
+  and the lockfile are unchanged.
+- Verification: one final `npm run build` passed without warnings; no new
+  tests were added. Backend/domain tests, full Docker verification, browser
+  workflows, screenshots, pixels, and responsive visual checks were not run.
+  User acceptance must cover direct-route refresh, navigation, CRUD/error
+  feedback, per-block writes, playback cleanup, and map/label presentation.
+- Local preview unified on user request: the existing frontend container was
+  recreated with `docker compose up -d --no-deps frontend` from this `c980`
+  checkout. Its `/app/src` mount now points to this checkout's `frontend/src`.
+  Docker development compilation succeeded and `http://localhost:4200/editor`
+  returned HTTP 200. Port 4201 has no remaining preview listener. Backend and
+  database containers were not recreated; existing CORS already allows 4200.
+  No image rebuild, dependency change, commit, or push was performed.
+  Browser/API interaction and visual acceptance remain pending.
 
 ### Completed Angular and Final Integration — 2026-10-01
 

@@ -1,0 +1,189 @@
+<div class="page-actions">
+  <button type="button" class="secondary" [disabled]="isBusy()" (click)="refreshAll()">
+    {{ loadingInitial() ? 'Loading' : 'Refresh' }}
+  </button>
+</div>
+<p *ngIf="loadingInitial()" class="empty muted" role="status">Loading data...</p>
+<section *ngIf="notice()" class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
+  {{ notice() }}
+</section>
+
+<section class="panel map-panel">
+  <div class="section-header map-header">
+    <div>
+      <h2>Path editor map</h2>
+      <p>{{ pathEndpointLabel() }}</p>
+    </div>
+  </div>
+
+  <div class="map-toolbar">
+    <div class="path-steps" aria-label="Selected path">
+      <span *ngFor="let elementId of pathSelection(); let index = index">
+        <small>{{ index + 1 }}</small>{{ elementId }}
+      </span>
+    </div>
+    <div class="map-actions">
+      <button type="button" class="secondary small" [disabled]="isBusy() || pathSelection().length === 0" (click)="undoPathElement()">Undo</button>
+      <button type="button" class="secondary small" [disabled]="isBusy()" (click)="resetPathToY()">Reset to Y</button>
+      <button type="button" class="secondary small" [disabled]="isBusy()" (click)="choosePathStart()">Change start</button>
+    </div>
+  </div>
+
+  <app-track-map
+    [topology]="topology()"
+    [selectedPath]="pathSelection()"
+    [interactive]="!isBusy()"
+    [vehicles]="[]"
+    [conflictElementIds]="[]"
+    mapPurpose="editor"
+    (elementSelected)="selectPathElement($event)"
+  />
+</section>
+
+<section class="layout editor-layout">
+  <div class="right-column">
+    <section class="panel form-panel">
+      <div class="section-header">
+        <div>
+          <h2>{{ editingServiceId() === null ? 'Create service' : 'Update service #' + editingServiceId() }}</h2>
+          <p>Use a complete ordered path; the backend validates direction and schedule rules.</p>
+        </div>
+        <button *ngIf="editingServiceId() !== null" type="button" class="secondary" [disabled]="isBusy()" (click)="cancelEdit()">
+          Cancel edit
+        </button>
+      </div>
+
+      <form (ngSubmit)="submitService()">
+        <fieldset class="service-form" [disabled]="isBusy()">
+        <div class="form-grid">
+          <label>
+            Vehicle
+            <select name="vehicleId" required [(ngModel)]="serviceForm.vehicleId">
+              <option value="" disabled>Select vehicle</option>
+              <option *ngFor="let vehicle of vehicles()" [value]="vehicle.id">{{ vehicle.id }}</option>
+            </select>
+          </label>
+
+          <label>
+            Start time (Taipei)
+            <input
+              name="startTime"
+              type="datetime-local"
+              step="1"
+              required
+              [ngModel]="serviceForm.startTime"
+              (ngModelChange)="onStartTimeChange($event)"
+            />
+          </label>
+        </div>
+
+          <label>
+            Ordered path
+            <input
+              name="pathText"
+              type="text"
+              required
+              [ngModel]="serviceForm.pathText"
+              (ngModelChange)="onPathTextChange($event)"
+              placeholder="Y, B1, P1A"
+            />
+          </label>
+
+        <div class="timing-header">
+          <h3>Platform timings</h3>
+        </div>
+
+        <div *ngIf="timingError()" class="notice error" role="alert">
+          {{ timingError() }}
+          <a *ngIf="missingBlockIds().length > 0" routerLink="/blocks">Block Configuration</a>
+        </div>
+
+        <div *ngIf="serviceForm.platformTimings.length === 0" class="empty muted">
+          No platform timing rows.
+        </div>
+
+        <div *ngFor="let timing of serviceForm.platformTimings; let index = index; trackBy: trackTimingRow" class="timing-row dwell-row">
+          <div>
+            <strong>{{ timing.platformId }}</strong>
+            <small>Path index {{ timing.pathIndex }}</small>
+          </div>
+          <label>
+            Dwell seconds
+            <input
+              type="number"
+              min="0"
+              step="any"
+              [name]="'dwell-' + index"
+              [ngModel]="timing.dwellSeconds"
+              (ngModelChange)="setDwellSeconds(timing, $event)"
+              required
+            />
+          </label>
+          <div>
+            <small>Arrival</small>
+            <span>{{ timing.arrivalTime ? formatForDisplay(timing.arrivalTime) : '-' }}</span>
+          </div>
+          <div>
+            <small>Departure</small>
+            <span>{{ timing.departureTime ? formatForDisplay(timing.departureTime) : '-' }}</span>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" [disabled]="isBusy() || !!timingError()">
+            {{ savingService() ? 'Saving' : editingServiceId() === null ? 'Create service' : 'Update service' }}
+          </button>
+          <button type="button" class="secondary" (click)="resetForm()">Reset</button>
+        </div>
+      </fieldset>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <h2>Services</h2>
+          <p>{{ services().length }} saved</p>
+        </div>
+        <button type="button" class="secondary" [disabled]="isBusy()" (click)="loadServices()">
+          {{ loadingServices() ? 'Refreshing' : 'Refresh list' }}
+        </button>
+      </div>
+
+      <div *ngIf="services().length === 0 && !loadingInitial() && !loadingServices()" class="empty">
+        No services have been scheduled yet.
+      </div>
+
+      <article *ngFor="let service of services()" class="service-item">
+        <div class="service-summary">
+          <div>
+            <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
+            <p>{{ formatForDisplay(service.startTime) }} | {{ service.path.join(' -> ') }}</p>
+          </div>
+          <div class="service-actions">
+            <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
+              {{ expandedServiceIds().has(service.id) ? 'Hide timeline' : 'Timeline' }}
+            </button>
+            <button type="button" class="small" [disabled]="isBusy()" (click)="startEdit(service)">Edit</button>
+            <button type="button" class="danger small" [disabled]="isBusy()" (click)="confirmDelete(service)">Delete</button>
+          </div>
+        </div>
+
+        <div *ngIf="expandedServiceIds().has(service.id)" class="timeline">
+          <div class="table-row table-head">
+            <span>Index</span>
+            <span>Element</span>
+            <span>Start</span>
+            <span>End</span>
+          </div>
+          <div *ngFor="let interval of service.timeline" class="table-row">
+            <span>{{ interval.pathIndex }}</span>
+            <strong>{{ interval.elementId }}</strong>
+            <span>{{ formatForDisplay(interval.startTime) }}</span>
+            <span>{{ formatForDisplay(interval.endTime) }}</span>
+          </div>
+        </div>
+      </article>
+    </section>
+  </div>
+</section>

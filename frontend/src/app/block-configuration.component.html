@@ -1,0 +1,88 @@
+<div class="page-actions">
+  <button type="button" class="secondary" [disabled]="isBusy()" (click)="refreshAll()">
+    {{ loadingInitial() ? 'Loading' : 'Refresh' }}
+  </button>
+</div>
+<p *ngIf="loadingInitial()" class="empty muted" role="status">Loading data...</p>
+<section *ngIf="notice()" class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
+  {{ notice() }}
+</section>
+
+<section class="layout">
+  <div class="left-column">
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <h2>Topology reference</h2>
+          <p>{{ topology().elements.length }} elements | {{ topology().connections.length }} directed connections</p>
+        </div>
+      </div>
+
+      <div class="element-groups">
+        <div *ngFor="let group of topologyGroups()" class="element-group">
+          <h3>{{ group.label }}</h3>
+          <div class="chips">
+            <span *ngFor="let element of group.elements" class="chip" [class.block]="element.elementType === 'BLOCK'">
+              {{ element.id }}
+              <small *ngIf="element.elementType === 'BLOCK'">
+                {{ element.traversalSeconds === null ? 'unset' : element.traversalSeconds + 's' }}
+              </small>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connection-list">
+        <span *ngFor="let edge of topology().connections" class="connection">
+          {{ edge.fromElementId }} -> {{ edge.toElementId }}
+        </span>
+      </div>
+    </section>
+  </div>
+
+  <div class="right-column">
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <h2>Block traversal times</h2>
+          <p>Saved services keep their existing timeline snapshots.</p>
+        </div>
+      </div>
+
+      <div class="block-table" role="table" aria-label="Block traversal configuration">
+        <div class="table-row table-head" role="row">
+          <span role="columnheader">Block</span>
+          <span role="columnheader">Seconds</span>
+          <span role="columnheader">Group</span>
+          <span role="columnheader"></span>
+        </div>
+        <div *ngFor="let block of blocks()" class="table-row" role="row">
+          <strong role="cell">{{ block.id }}</strong>
+          <label role="cell" class="inline-input">
+            <input
+              type="number"
+              [disabled]="isBusy()"
+              min="0"
+              step="1"
+              required
+              [name]="'block-' + block.id"
+              [ngModel]="blockDrafts()[block.id] ?? '20'"
+              (ngModelChange)="setBlockDraft(block.id, $event)"
+              (blur)="restoreEmptyBlockDraft(block)"
+            />
+          </label>
+          <span role="cell">{{ block.interlockingGroup ?? '-' }}</span>
+          <button
+            role="cell"
+            type="button"
+            class="small"
+            [disabled]="isBusy()"
+            (click)="saveBlock(block)"
+          >
+            {{ savingBlockId() === block.id ? 'Saving' : 'Save' }}
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+</section>
