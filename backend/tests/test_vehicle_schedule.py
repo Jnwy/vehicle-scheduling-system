@@ -11,7 +11,9 @@ from app.domain.vehicle_schedule import (
     ServiceScheduleError,
     VehicleLocationContinuityError,
     VehicleOverlapError,
+    IncomparableScheduleTimeError,
     occupancies_overlap,
+    validate_service_deletion,
     validate_vehicle_schedule,
     vehicle_occupancy,
 )
@@ -347,3 +349,117 @@ def test_service_schedule_is_immutable():
 
     with pytest.raises(FrozenInstanceError):
         schedule.vehicle_id = "V2"
+
+
+def deletion_schedule():
+    return (
+        make_schedule(service_id=1, end_location="P2A", end_seconds=10),
+        make_schedule(
+            service_id=2, start_location="P2A", end_location="P3A",
+            start_seconds=20, end_seconds=30,
+        ),
+        make_schedule(
+            service_id=3, start_location="P3A", end_location="P4A",
+            start_seconds=40, end_seconds=50,
+        ),
+    )
+
+
+def test_deletion_rejects_broken_remaining_continuity_without_mutation():
+    services = deletion_schedule()
+    original = tuple(services)
+
+    with pytest.raises(VehicleLocationContinuityError) as exc_info:
+        validate_service_deletion(services[1], iter(reversed(services)))
+
+    assert exc_info.value.from_service_id == 1
+    assert exc_info.value.to_service_id == 3
+    assert exc_info.value.from_location == "P2A"
+    assert exc_info.value.to_location == "P3A"
+    assert services == original
+
+
+def test_deletion_allows_matching_remaining_locations_across_time_gap():
+    predecessor, _, successor = deletion_schedule()
+    target = make_schedule(
+        service_id=2, start_location="P2A", end_location="P2A",
+        start_seconds=20, end_seconds=30,
+    )
+    successor = make_schedule(
+        service_id=3, start_location="P2A", end_location="P4A",
+        start_seconds=40, end_seconds=50,
+    )
+
+    validate_service_deletion(target, (successor, target, predecessor))
+
+
+@pytest.mark.parametrize("target_index,only_service", [(0, False), (2, False), (1, True)])
+def test_deletion_allows_first_last_or_only_service(target_index, only_service):
+    services = deletion_schedule()
+    target = services[target_index]
+
+    validate_service_deletion(target, (target,) if only_service else services)
+
+
+def test_deletion_ignores_other_vehicles():
+    target = make_schedule(service_id=2, start_seconds=20, end_seconds=30)
+    other_services = (
+        make_schedule(service_id=1, vehicle_id="V2", end_seconds=10),
+        make_schedule(service_id=3, vehicle_id="V2", start_seconds=40, end_seconds=50),
+    )
+
+    validate_service_deletion(target, (*other_services, target))
+
+
+def test_deletion_checks_only_immediate_neighbors():
+    predecessor = make_schedule(
+        service_id=2, start_location="P1A", end_location="P2A",
+        start_seconds=10, end_seconds=20,
+    )
+    target = make_schedule(
+        service_id=3, start_location="P2A", end_location="P2A",
+        start_seconds=20, end_seconds=30,
+    )
+    successor = make_schedule(
+        service_id=4, start_location="P2A", end_location="P3A",
+        start_seconds=30, end_seconds=40,
+    )
+    earlier = make_schedule(service_id=1, end_location="P1A", end_seconds=10)
+    later = make_schedule(
+        service_id=5, start_location="P3A", end_location="P4A",
+        start_seconds=40, end_seconds=50,
+    )
+
+    validate_service_deletion(target, (later, predecessor, target, earlier, successor))
+
+
+def test_zero_duration_deletion_still_checks_continuity():
+    predecessor, _, successor = deletion_schedule()
+    target = make_schedule(
+        service_id=2, start_seconds=20, end_seconds=20,
+    )
+
+    with pytest.raises(VehicleLocationContinuityError):
+        validate_service_deletion(target, (predecessor, target, successor))
+
+
+def test_deletion_rejects_incomparable_schedule_times():
+    predecessor, target, successor = deletion_schedule()
+    naive_target = ServiceSchedule(
+        service_id=target.service_id, vehicle_id=target.vehicle_id, path=target.path,
+        timeline=tuple(
+            TimelineInterval(
+                interval.element_id,
+                interval.start_time.replace(tzinfo=None),
+                interval.end_time.replace(tzinfo=None),
+            ) for interval in target.timeline
+        ),
+    )
+
+    with pytest.raises(IncomparableScheduleTimeError):
+        validate_service_deletion(naive_target, (predecessor, successor))
+
+
+def test_deletion_requires_persisted_target_identity():
+    with pytest.raises(ServiceScheduleError):
+        validate_service_deletion(make_schedule(service_id=None), ())

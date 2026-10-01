@@ -154,6 +154,66 @@ def validate_vehicle_schedule(
         raise IncomparableScheduleTimeError() from error
 
 
+def validate_service_update(
+    target: ServiceSchedule,
+    candidate: ServiceSchedule,
+    existing_services: Iterable[ServiceSchedule],
+) -> None:
+    if target.service_id is None or candidate.service_id != target.service_id:
+        raise ServiceScheduleError("An update must retain the target service ID.")
+
+    # Replace in place to retain the existing tie behavior for equal times.
+    final_services = tuple(
+        candidate if service.service_id == target.service_id else service
+        for service in existing_services
+    )
+    validate_vehicle_schedule(candidate, final_services)
+    for service in final_services:
+        if service.vehicle_id in (target.vehicle_id, candidate.vehicle_id):
+            validate_vehicle_schedule(service, final_services)
+
+
+def validate_service_deletion(
+    target: ServiceSchedule,
+    existing_services: Iterable[ServiceSchedule],
+) -> None:
+    if target.service_id is None:
+        raise ServiceScheduleError("A service to delete must have an ID.")
+
+    remaining_services = tuple(
+        service for service in existing_services
+        if service.vehicle_id == target.vehicle_id
+        and service.service_id != target.service_id
+    )
+    try:
+        predecessor = max(
+            (service for service in remaining_services
+             if service.end_time <= target.start_time),
+            key=lambda service: service.end_time,
+            default=None,
+        )
+        successor = min(
+            (service for service in remaining_services
+             if service.start_time >= target.end_time),
+            key=lambda service: service.start_time,
+            default=None,
+        )
+    except TypeError as error:
+        raise IncomparableScheduleTimeError() from error
+
+    if (
+        predecessor is not None
+        and successor is not None
+        and predecessor.end_location != successor.start_location
+    ):
+        raise VehicleLocationContinuityError(
+            predecessor.service_id,
+            successor.service_id,
+            predecessor.end_location,
+            successor.start_location,
+        )
+
+
 def _validate_vehicle_schedule(
     candidate: ServiceSchedule,
     existing_services: Sequence[ServiceSchedule],

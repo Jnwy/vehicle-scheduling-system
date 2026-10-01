@@ -6,7 +6,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.timeline import TimelineInterval
-from app.domain.vehicle_schedule import ServiceSchedule
+from app.domain.vehicle_schedule import (
+    ServiceSchedule,
+    VehicleLocationContinuityError,
+    validate_service_deletion,
+)
 from app.persistence.database import engine
 from app.persistence.models import (
     ServicePathElementRecord,
@@ -48,8 +52,9 @@ def make_schedule(
     vehicle_id: str = "V1",
     path: tuple[str, ...] = ("Y", "B1", "P1A"),
     durations: tuple[int, ...] = (0, 20, 30),
+    start_seconds: int = 0,
 ) -> ServiceSchedule:
-    current_time = BASE_TIME
+    current_time = BASE_TIME + timedelta(seconds=start_seconds)
     intervals = []
 
     for element_id, duration in zip(path, durations, strict=True):
@@ -257,6 +262,51 @@ def test_service_repository_preserves_repeated_platform_occurrences(session):
     assert loaded.timeline[0].end_time == BASE_TIME + timedelta(seconds=10)
     assert loaded.timeline[4].start_time == BASE_TIME + timedelta(seconds=50)
     assert loaded.timeline[4].end_time == BASE_TIME + timedelta(seconds=80)
+
+
+def test_rejected_deletion_validation_preserves_persisted_schedule(session):
+    repository = ServiceRepository(session)
+    predecessor = repository.create(make_schedule(durations=(0, 20, 10)))
+    target = repository.create(make_schedule(
+        path=("P1A", "B1", "Y"), durations=(10, 20, 0), start_seconds=30,
+    ))
+    successor = repository.create(make_schedule(
+        path=("Y", "B2", "P1B"), durations=(0, 20, 10), start_seconds=60,
+    ))
+    before = repository.list()
+
+    with pytest.raises(VehicleLocationContinuityError):
+        validate_service_deletion(target, before)
+
+    session.expire_all()
+    assert repository.list() == (predecessor, target, successor)
+    assert session.scalar(
+        select(func.count()).select_from(ServicePathElementRecord)
+        .where(ServicePathElementRecord.service_id == target.service_id)
+    ) == 3
+
+
+def test_continuous_deletion_validation_allows_repository_delete(session):
+    repository = ServiceRepository(session)
+    predecessor = repository.create(make_schedule(durations=(0, 20, 10)))
+    target = repository.create(make_schedule(
+        path=("P1A", "B1", "Y", "B1", "P1A"),
+        durations=(10, 20, 0, 20, 10), start_seconds=30,
+    ))
+    successor = repository.create(make_schedule(
+        path=("P1A", "B3", "B5", "P2A"),
+        durations=(10, 20, 20, 10), start_seconds=90,
+    ))
+
+    validate_service_deletion(target, repository.list())
+    assert repository.delete(target.service_id)
+
+    session.expire_all()
+    assert repository.list() == (predecessor, successor)
+    assert session.scalar(
+        select(func.count()).select_from(ServicePathElementRecord)
+        .where(ServicePathElementRecord.service_id == target.service_id)
+    ) == 0
 
 
 def test_service_repository_does_not_commit_caller_transaction(session):

@@ -208,10 +208,12 @@ service.start_time
 
 This is the time at which the vehicle enters the first path element.
 
-Timezone normalization is outside the current scope. Timeline calculation
-preserves the timezone of the supplied `datetime` values and expects all values
-within a service to be mutually comparable. The application may use the system
-timezone or Asia/Taipei without domain-level conversion.
+Timeline calculation preserves the timezone of supplied `datetime` values and
+expects mutually comparable values. The HTTP boundary interprets naive inputs
+as Asia/Taipei, respects the absolute instant of offset-aware inputs, and
+normalizes calculation/output datetimes to a fixed `+08:00` offset, including
+historical dates. This preserves elapsed durations across historical timezone
+transitions. Domain functions do not convert timezones.
 
 Time ownership is defined as follows:
 
@@ -428,8 +430,9 @@ For the initial implementation, use the simplest rule:
 
 Do not implement automatic deadheading or repositioning unless required later.
 
-Only the immediately adjacent predecessor and successor services for the same
-vehicle are checked when inserting or updating a service. A time gap does not
+The immediately adjacent predecessor and successor services for the same
+vehicle are checked when inserting a service. Updates additionally validate
+the final schedules of both affected vehicles (Rule 11.2). A time gap does not
 permit the vehicle to change location on its own. Services assigned to other
 vehicles do not affect this validation.
 
@@ -451,12 +454,50 @@ When creating or updating a service:
 
 Do not persist an invalid service and then attempt to repair it.
 
-Existing services are treated as previously validated data. Create and update
-validation checks whether the candidate can be inserted among them.
+Existing services are treated as previously validated data. Creation checks
+whether the candidate can be inserted among them. Update validation also checks
+the remaining old schedule after replacing the target (Rule 11.2).
 
 If the block and interlocking bonus is implemented later, its occupancy and
 conflict checks can be added after timeline calculation without changing the
 mandatory vehicle rules.
+
+---
+
+## Rule 11.1 — Delete Validation
+
+Decision confirmed on 2026-10-01: reject a service deletion if it would break
+location continuity between the remaining services assigned to the same vehicle.
+
+Before deleting, identify the target's immediately adjacent predecessor and
+successor for the same vehicle using the existing schedule ordering. If both
+exist, the predecessor's end location must equal the successor's start location.
+A time gap does not permit repositioning. If this check fails, reject the
+deletion, report the continuity failure, and leave the persisted schedule unchanged.
+
+Deleting the first, last, or only service has no newly adjacent pair and passes
+this continuity check. Services assigned to other vehicles are unaffected.
+Validation and deletion must share a transaction boundary with concurrency
+control in the application layer; repository deletion remains a persistence operation.
+
+The pure domain deletion validator is enforced by the application/API within
+the shared advisory-lock transaction. Repository deletion alone does not enforce
+this rule.
+
+## Rule 11.2 — Update Validation
+
+Decision confirmed in the FastAPI milestone plan on 2026-10-01: replace the
+target with the candidate, preserving its service ID and position in the input
+sequence, then validate the final schedules of the old and new vehicles.
+Reusing vehicle overlap and neighbor-continuity validation for each affected
+service rejects moves or reassignments that disconnect the remaining schedule.
+An in-place replacement can preserve a bridge and must not be rejected merely
+because deleting the original alone would break continuity.
+
+Unrelated vehicles are not revalidated. Existing equal-time neighbor selection
+and zero-duration behavior are retained; no new tie-breaking rule is introduced.
+API reads list services by ID, giving stable input order for equal-time ties.
+Validation and replacement share the application transaction and write lock.
 
 ---
 
@@ -481,5 +522,8 @@ Mandatory scheduling tests include:
 - interval overlap
 - vehicle overlap
 - vehicle continuity
+- deletion continuity: reject a broken remaining predecessor/successor pair;
+  allow a continuous pair and first/last/only-service deletion; verify rejected
+  deletion preserves stored data and other vehicles do not affect the check
 
 Block and interlocking conflict tests belong to the deferred bonus phase.
