@@ -44,7 +44,7 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 Last verified result:
 
 ```text
-131 passed
+176 passed
 ```
 
 Latest completed milestone commits:
@@ -59,6 +59,78 @@ aed4abc feat: expose transactional scheduling API
 3e233e1 feat: validate mandatory vehicle schedules
 dd455c6 docs: separate mandatory rules from bonus conflicts
 ```
+
+## Active Handoff: Integration Recovery (2026-10-02)
+
+A previous agent stopped in the middle of integrating parallel work onto
+`codex/basic-version-integration`. Read this section before any Git operation.
+
+### Git state at handoff
+
+- The cherry-pick of `0257744` (`fix: enforce interlocking schedule
+  constraints`) is committed as `bea8c38`. Its three conflicts
+  (`backend/tests/test_api.py`, `docs/DOMAIN_RULES.md`,
+  `docs/IMPLEMENTATION_PLAN.md`) were resolved before the commit.
+- The remaining working-tree changes belong to the separate follow-up commits
+  listed below. Stage them by explicit path, never with `git add -A`.
+- Conflict resolution note: the HEAD API test for schedule analysis used two
+  vehicles on B1 at the same time. B1 is in interlocking group IG1, so that
+  write is now rejected. The test was moved to ungrouped block B5.
+
+### Decision: no separate interlocking warning in Bonus analysis
+
+Confirmed by the user on 2026-10-02. Interlocking group exclusivity is a
+mandatory Track Map rule enforced at create/update (409), so persisted
+schedules cannot contain it. `schedule_analysis` no longer emits an
+`INTERLOCKING` conflict; it reports general block occupancy and battery only.
+The frontend `ConflictType` union was narrowed to match.
+
+### Unstaged follow-up changes (separate commits)
+
+1. `refactor: drop redundant interlocking warning from schedule analysis`:
+   `backend/app/domain/schedule_analysis.py`,
+   `backend/tests/test_schedule_analysis.py`, `frontend/src/app/models.ts`,
+   `docs/BONUS_IMPLEMENTATION_HANDOFF.md`
+2. `docs: add Claude Code entry point and integration handoff`:
+   `CLAUDE.md`, this section of `docs/IMPLEMENTATION_PLAN.md`, and the README
+   design decision "Interlocking as a Write-Time Rule, Block Occupancy as a
+   Report" (user confirmed interpretation and wording on 2026-10-02)
+
+### Verification at handoff
+
+Run outside Docker against a local PostgreSQL 16 `*_test` database with
+Python 3.11; the project image uses Python 3.13:
+
+- cherry-pick content (now `bea8c38`): full backend suite `176 passed`
+- with the analysis refactor applied: full backend suite `176 passed`
+- not run at handoff: Angular build, Docker suite, browser checks
+
+Rerun in Docker on 2026-10-02 (Python 3.13, `fastapi_scheduling_test`):
+
+- cherry-pick content before `bea8c38` was committed: `176 passed`
+- `bea8c38` plus the analysis refactor: `176 passed`
+- Angular `npm run build` in the frontend container with the narrowed
+  `ConflictType`: succeeded
+- still not run: image rebuild, `alembic check`, browser checks
+
+### Next steps (each requires explicit user authorization to commit)
+
+1. Run the full Docker test suite (command below) on `bea8c38` plus the
+   working-tree changes.
+2. Commit the two unstaged follow-ups listed above, one commit each.
+3. Cherry-pick `3b3a7e7` (`feat: complete scheduling frontend workflow`). It
+   adds the separate Schedule Editor, read-only Schedule Viewer, and Block
+   Configuration routes required by the assignment. Expect a conflict only in
+   this document. Then run `npm run build` and check all three pages in a
+   browser, including the 409 interlocking error message in the editor.
+4. Compare `b20d53e` (track map layout refinement) and `stash@{0}` against
+   `3b3a7e7`; both touch the same frontend files. Pick or drop with the user.
+5. README: add inline data model and API overview sections and an explicit
+   Assumptions section (assignment submission guideline), and refresh the
+   test count.
+6. Verify `docker compose up` from a clean volume, merge into `main`, and push.
+   `origin/main` is still at `8262561` (persistence milestone).
+7. Optional cleanup: `git worktree prune` for stale `.codex/worktrees` entries.
 
 ## Completed Domain Contract
 
@@ -104,8 +176,13 @@ existing shared advisory-lock transaction. No schema change is required.
 Targeted verification: `test_interlocking.py`, `test_vehicle_schedule.py`, and
 `test_api.py` passed 103 tests. Disabling only the new interlocking validator in
 an isolated test process made all three API create/update rejection cases fail,
-confirming the regression tests catch missing validation. No full-suite Docker,
-frontend, or browser verification was run for this correction.
+confirming the regression tests catch missing validation.
+
+Full Docker backend suite after integrating the correction on
+`codex/basic-version-integration` (2026-10-02): `176 passed` with the known
+Starlette/AnyIO deprecation warning, using the existing backend image and
+`fastapi_scheduling_test`. No image rebuild, `alembic check`, frontend build,
+or browser verification was rerun for this correction.
 
 ## Completed Milestone: Persistence
 

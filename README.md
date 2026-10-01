@@ -384,6 +384,59 @@ A production system could model repositioning as explicit services or introduce 
 
 ---
 
+## Interlocking as a Write-Time Rule, Block Occupancy as a Report
+
+### Decision
+
+Cross-vehicle interlocking violations are rejected on create and update with
+409. General block occupancy, low battery, and insufficient charge are
+detected and reported by the schedule analysis, and do not reject writes.
+
+A violation requires different vehicles, blocks in the same interlocking
+group, and overlapping `[start, end)` intervals. Touching intervals and
+services of the same vehicle are not interlocking violations.
+
+### Why
+
+The assignment places the interlocking groups in the Track Map section, next
+to the connectivity rule, and states them as a constraint: only one vehicle
+may occupy any block of a group at a time. Path connectivity in the same
+section is validated on write, so I treat interlocking the same way.
+
+Block occupancy, low battery, and insufficient charge are listed under
+Bonus 1, which asks the system to detect and report conflicts. Interlocking is
+not in that list. I followed the assignment's own categorization rather than
+reclassifying requirements.
+
+Because interlocking violations can never be persisted, the schedule analysis
+does not report a separate interlocking warning.
+
+### Trade-off
+
+This creates an asymmetry. Two vehicles on the same ungrouped block, for
+example B5 at the same time, are accepted and only reported, even though they
+share one physical track. Two vehicles on B1 and B2, which are different
+tracks in the same group, are rejected.
+
+So the weaker physical risk is enforced while the stronger one is only
+reported. I accepted this to stay faithful to the assignment's separation of
+mandatory rules and Bonus detection, and to keep same-block conflicts visible
+in schedule playback.
+
+### Alternative Considered
+
+Treating interlocking like block occupancy, as a reported warning, would
+remove the asymmetry. I rejected it because it would leave a stated Track Map
+constraint unenforced in the mandatory scope.
+
+### When I Would Change It
+
+In a production system I would reject both cases on write, because a shared
+block is at least as unsafe as a shared interlocking group. Playback would
+then show only conflicts in imported or legacy data.
+
+---
+
 ## Architecture
 
 Initial architecture:
@@ -511,7 +564,7 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 API tests commit transactions and clear services in the designated test
 database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
-Last verified result: **131 passed**.
+Last verified result: **176 passed**.
 
 ---
 
