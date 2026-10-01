@@ -9,9 +9,6 @@ conflicts are assignment Bonus reports, not write rejection rules.
 
 > This project is implemented as a technical assignment. The primary focus is correctness, domain modeling, scheduling rules, and clear engineering trade-offs rather than feature volume or UI complexity.
 
-Current milestone status, definitions of done, and cross-machine handoff notes
-are tracked in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
-
 ---
 
 ## Overview
@@ -62,9 +59,76 @@ Before a service is accepted, the system validates the path and checks whether i
 
 ---
 
-## Core Requirements
+## Running the Project
 
-The initial implementation focuses on:
+Build and start the complete application from the repository root:
+
+```bash
+docker compose up --build
+```
+
+After the first build, start the existing containers in the background with:
+
+```bash
+docker compose up -d
+```
+
+The frontend is available at `http://localhost:4200`, and the backend health
+endpoint is available at `http://localhost:8000/health`.
+
+Backend startup applies pending Alembic migrations and runs an idempotent seed
+for the fixed topology and vehicles `V1`/`V2`. Seed execution does not overwrite
+configured block traversal times. Seeded blocks B1-B14 default to 20 seconds;
+existing null values are filled with 20. This is a project product default,
+not a duration supplied by the assignment. Block updates require a non-negative
+integer and cannot clear the value.
+
+Backend application and test files, and frontend source files, are mounted into
+their containers. FastAPI reloads when backend application code changes, and
+Angular rebuilds when frontend source code changes. Rebuild the relevant image
+after changing dependencies, a Dockerfile, or build configuration:
+
+```bash
+docker compose up --build -d backend
+docker compose up --build -d frontend
+```
+
+---
+
+## Running Tests
+
+Run domain tests inside the running backend container:
+
+```bash
+docker compose exec backend python -m pytest tests/test_path_validation.py tests/test_timeline.py tests/test_vehicle_schedule.py tests/test_service_update.py
+```
+
+Because the tests directory is mounted into the container, test-only changes do
+not require rebuilding the backend image.
+
+For the complete suite, create and migrate an independent test database once:
+
+```bash
+docker compose exec database createdb -U vehicle_scheduling fastapi_scheduling_test
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint alembic backend upgrade head
+```
+
+Then run all domain, PostgreSQL, API, and concurrency tests:
+
+```bash
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
+```
+
+API tests commit transactions and clear services in the designated test
+database. A database name ending in `_test` is required. Do not use an
+application database or run parallel suites against the same test database.
+Last verified result: **178 passed**.
+
+---
+
+## Implemented Scope
+
+### Core Requirements
 
 - service CRUD
 - predefined railway topology
@@ -75,11 +139,18 @@ The initial implementation focuses on:
 - vehicle location continuity
 - interlocking group exclusivity across vehicles
 - unit-tested domain logic
-- minimal Angular interface
+- three Angular pages: Schedule Editor, Schedule Viewer, Block Configuration
 
-Optional assignment features include general block occupancy, low battery,
-and insufficient charge detection/reporting. Interlocking exclusivity belongs
-to the assignment's Track Map rules and is mandatory.
+Interlocking exclusivity belongs to the assignment's Track Map rules and is
+treated as mandatory, not as a Bonus.
+
+### Bonus Features
+
+| Bonus | Status | What is included |
+| --- | --- | --- |
+| 1 — Conflict Detection | Implemented | `GET /schedule-analysis` reports cross-vehicle block occupancy, low battery, and insufficient charge on yard departure. These are warnings and do not reject writes. |
+| 2 — Interactive Track Map | Implemented | A d3 SVG map of the topology. The Schedule Editor builds a path by clicking elements, enabling only legal next elements. The Schedule Viewer plays the schedule back with vehicle positions, battery state, and conflict highlighting. |
+| 3 — Auto-Generate Schedule | Not implemented | — |
 
 ---
 
@@ -149,6 +220,7 @@ Examples of resources:
 
 ```text
 vehicle:V1
+interlocking:IG1
 ```
 
 Mandatory validation uses full-service vehicle occupancy and per-block
@@ -253,7 +325,7 @@ If route selection became part of the product requirements, route finding could 
 
 ### Decision
 
-Railway topology and vehicles are initially loaded as predefined data.
+Railway topology and vehicles are loaded as predefined data.
 
 ### Why
 
@@ -261,8 +333,8 @@ The assignment primarily requires managing services rather than infrastructure c
 
 ### Trade-off
 
-Users cannot dynamically create or delete vehicles or railway topology in the
-initial version. Block traversal time remains editable because Block
+Users cannot dynamically create or delete vehicles or railway topology.
+Block traversal time remains editable because Block
 Configuration is a mandatory assignment page. Existing services retain their
 saved timeline snapshot when traversal configuration changes.
 
@@ -302,7 +374,7 @@ The core behavior can be tested without:
 
 ### Decision
 
-Resource occupancy is initially treated as data derived from a service and its timeline rather than as the primary persisted representation.
+Resource occupancy is treated as data derived from a service and its timeline rather than as the primary persisted representation.
 
 ### Why
 
@@ -362,7 +434,7 @@ replanning workflow instead of silently recalculating on read.
 
 ### Decision
 
-For the initial implementation, consecutive services assigned to the same vehicle must connect directly:
+Consecutive services assigned to the same vehicle must connect directly:
 
 ```text
 previous_service.end_location
@@ -439,8 +511,6 @@ then show only conflicts in imported or legacy data.
 
 ## Architecture
 
-Initial architecture:
-
 ```text
 Angular
    ↓
@@ -454,8 +524,6 @@ Persistence
 ```
 
 Core scheduling rules remain below the HTTP layer.
-
-Further implementation details will be documented as development progresses.
 
 The backend service CRUD, seeded reads, block configuration, error responses,
 timezone handling, and transaction lock are documented in
@@ -486,6 +554,17 @@ PostgreSQL holds five tables. Full columns and constraints are in
 
 Platform arrival and departure are the saved interval of that platform
 occurrence, keyed by `path_index`, so repeated visits stay distinct.
+
+Rationale, detailed under Design Decisions and Trade-offs:
+
+- One `track_elements` table for yards, platforms, and blocks keeps the graph
+  a single node type, so `track_connections` uses plain foreign keys
+  (Unified TrackElement Model).
+- A service's path and timeline share `service_path_elements`, so an accepted
+  schedule is saved atomically and stays stable when block configuration
+  changes (Persisted Timeline Snapshots).
+- Vehicle and interlocking occupancy have no table; they are derived from the
+  saved intervals to avoid duplicated state (Derived Resource Occupancy).
 
 ---
 
@@ -563,83 +642,19 @@ occupancy and battery reports remain separate Bonus behavior.
 
 ---
 
-## Running the Project
-
-Build and start the complete application from the repository root:
-
-```bash
-docker compose up --build
-```
-
-After the first build, start the existing containers in the background with:
-
-```bash
-docker compose up -d
-```
-
-The frontend is available at `http://localhost:4200`, and the backend health
-endpoint is available at `http://localhost:8000/health`.
-
-Backend startup applies pending Alembic migrations and runs an idempotent seed
-for the fixed topology and vehicles `V1`/`V2`. Seed execution does not overwrite
-configured block traversal times. Seeded blocks B1-B14 default to 20 seconds;
-existing null values are filled with 20. This is a project product default,
-not a duration supplied by the assignment. Block updates require a non-negative
-integer and cannot clear the value.
-
-Backend application and test files, and frontend source files, are mounted into
-their containers. FastAPI reloads when backend application code changes, and
-Angular rebuilds when frontend source code changes. Rebuild the relevant image
-after changing dependencies, a Dockerfile, or build configuration:
-
-```bash
-docker compose up --build -d backend
-docker compose up --build -d frontend
-```
-
----
-
-## Running Tests
-
-Run domain tests inside the running backend container:
-
-```bash
-docker compose exec backend python -m pytest tests/test_path_validation.py tests/test_timeline.py tests/test_vehicle_schedule.py tests/test_service_update.py
-```
-
-Because the tests directory is mounted into the container, test-only changes do
-not require rebuilding the backend image.
-
-For the complete suite, create and migrate an independent test database once:
-
-```bash
-docker compose exec database createdb -U vehicle_scheduling fastapi_scheduling_test
-docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint alembic backend upgrade head
-```
-
-Then run all domain, PostgreSQL, API, and concurrency tests:
-
-```bash
-docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
-```
-
-API tests commit transactions and clear services in the designated test
-database. A database name ending in `_test` is required. Do not use an
-application database or run parallel suites against the same test database.
-Last verified result: **178 passed**.
-
----
-
 ## Known Limitations
 
-The initial implementation intentionally does not include:
+The implementation intentionally does not include:
 
 - automatic route finding
-- automatic schedule generation
+- automatic schedule generation (Bonus 3)
 - vehicle management
 - topology structure management; block traversal configuration is mandatory
 - write rejection for general block occupancy or battery conflicts (reported
   only)
 - production-scale scheduling optimization
 
-These are kept outside the initial scope to prioritize correctness of the core scheduling model.
+These are kept out of scope to prioritize correctness of the core scheduling model.
+
+Development history and milestone verification records are in
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
