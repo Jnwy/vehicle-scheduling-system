@@ -480,3 +480,45 @@ def test_deletion_rejects_incomparable_schedule_times():
 def test_deletion_requires_persisted_target_identity():
     with pytest.raises(ServiceScheduleError):
         validate_service_deletion(make_schedule(service_id=None), ())
+
+
+def test_overlap_message_names_an_unsaved_candidate_in_words() -> None:
+    existing = make_schedule(service_id=2)
+    candidate = make_schedule(service_id=None, start_seconds=5, end_seconds=15)
+
+    with pytest.raises(VehicleOverlapError) as exc_info:
+        validate_vehicle_schedule(candidate, [existing])
+
+    assert str(exc_info.value) == (
+        "The new service overlaps service 2 assigned to the same vehicle."
+    )
+    assert exc_info.value.candidate_service_id is None
+
+
+def test_overlap_message_names_a_saved_candidate_by_id() -> None:
+    existing = make_schedule(service_id=2)
+    candidate = make_schedule(service_id=3, start_seconds=5, end_seconds=15)
+
+    with pytest.raises(VehicleOverlapError) as exc_info:
+        validate_vehicle_schedule(candidate, [existing])
+
+    assert str(exc_info.value) == (
+        "Service 3 overlaps service 2 assigned to the same vehicle."
+    )
+
+
+def test_continuity_message_names_an_unsaved_candidate_in_words() -> None:
+    existing = make_schedule(service_id=2, end_location="P2A")
+    candidate = make_schedule(
+        service_id=None, start_location="Y", end_location="P1A",
+        start_seconds=20, end_seconds=30,
+    )
+
+    with pytest.raises(VehicleLocationContinuityError) as exc_info:
+        validate_vehicle_schedule(candidate, [existing])
+
+    assert str(exc_info.value) == (
+        "Vehicle cannot continue from service 2 at 'P2A' "
+        "to the new service at 'Y'."
+    )
+    assert exc_info.value.to_service_id is None

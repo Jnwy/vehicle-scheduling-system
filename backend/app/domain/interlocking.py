@@ -6,6 +6,7 @@ from app.domain.vehicle_schedule import (
     ResourceType,
     ServiceSchedule,
     occupancies_overlap,
+    service_label,
 )
 
 
@@ -20,8 +21,9 @@ class InterlockingConflictError(ValueError):
         self.candidate_service_id = candidate_service_id
         self.conflicting_service_id = conflicting_service_id
         super().__init__(
-            f"Service {candidate_service_id!r} conflicts with service "
-            f"{conflicting_service_id!r} in interlocking group '{interlocking_group}'."
+            f"{service_label(candidate_service_id, sentence_start=True)} conflicts "
+            f"with {service_label(conflicting_service_id)} in interlocking group "
+            f"'{interlocking_group}'."
         )
 
 

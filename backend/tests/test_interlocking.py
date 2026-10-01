@@ -87,3 +87,16 @@ def test_interlocking_rejects_later_grouped_block_in_multi_block_path():
 
     assert error.value.interlocking_group == "IG2"
     assert error.value.conflicting_service_id == 1
+
+
+def test_interlocking_message_names_an_unsaved_candidate_in_words():
+    existing = schedule("B1", service_id=2)
+    candidate = schedule("B2", start=10, end=30, vehicle="V2", service_id=None)
+
+    with pytest.raises(InterlockingConflictError) as error:
+        validate_interlocking_schedule(candidate, [existing], assignment_topology())
+
+    assert str(error.value) == (
+        "The new service conflicts with service 2 in interlocking group 'IG1'."
+    )
+    assert error.value.candidate_service_id is None

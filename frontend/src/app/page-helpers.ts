@@ -57,9 +57,8 @@ export function formatErrorDetail(detail: unknown): string {
   }
 
   if (isRecord(detail)) {
-    const code = typeof detail['code'] === 'string' ? detail['code'] : 'Error';
-    const message = typeof detail['message'] === 'string' ? detail['message'] : JSON.stringify(detail);
-    return `${code}: ${message}`;
+    // The code identifies the rule for API clients; the message is the user-facing text.
+    return typeof detail['message'] === 'string' ? detail['message'] : JSON.stringify(detail);
   }
 
   if (typeof detail === 'string') {

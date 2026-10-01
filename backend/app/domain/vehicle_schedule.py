@@ -16,6 +16,12 @@ class VehicleScheduleError(ValueError):
     pass
 
 
+def service_label(service_id: int | None, *, sentence_start: bool = False) -> str:
+    # A candidate has no ID until it is persisted; messages are shown to users.
+    label = "the new service" if service_id is None else f"service {service_id}"
+    return label[0].upper() + label[1:] if sentence_start else label
+
+
 class VehicleOverlapError(VehicleScheduleError):
     def __init__(
         self,
@@ -25,8 +31,8 @@ class VehicleOverlapError(VehicleScheduleError):
         self.candidate_service_id = candidate_service_id
         self.conflicting_service_id = conflicting_service_id
         super().__init__(
-            f"Service {candidate_service_id!r} overlaps service "
-            f"{conflicting_service_id!r} assigned to the same vehicle."
+            f"{service_label(candidate_service_id, sentence_start=True)} overlaps "
+            f"{service_label(conflicting_service_id)} assigned to the same vehicle."
         )
 
 
@@ -43,8 +49,8 @@ class VehicleLocationContinuityError(VehicleScheduleError):
         self.from_location = from_location
         self.to_location = to_location
         super().__init__(
-            f"Vehicle cannot continue from service {from_service_id!r} at "
-            f"'{from_location}' to service {to_service_id!r} at '{to_location}'."
+            f"Vehicle cannot continue from {service_label(from_service_id)} at "
+            f"'{from_location}' to {service_label(to_service_id)} at '{to_location}'."
         )
 
 

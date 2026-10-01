@@ -90,13 +90,14 @@ Domain/application errors return a `detail` object. `code` is the exception
 class name, `message` is a readable explanation, and available context uses
 snake_case attributes such as `path_index`, `element_id`, `service_id`,
 `candidate_service_id`, `conflicting_service_id`, `from_service_id`, and
-`to_service_id`. Null service IDs identify an unsaved candidate. Request shape
+`to_service_id`. Null service IDs identify an unsaved candidate, which
+`message` calls "the new service". Request shape
 errors use FastAPI's standard `detail` array with field locations.
 
 Example:
 
 ```json
-{"detail":{"code":"VehicleOverlapError","message":"Service null overlaps an existing service.",
+{"detail":{"code":"VehicleOverlapError","message":"The new service overlaps service 1 assigned to the same vehicle.",
            "candidate_service_id":null,"conflicting_service_id":1}}
 ```
 
