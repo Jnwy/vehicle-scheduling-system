@@ -114,6 +114,16 @@ Rerun in Docker on 2026-10-02 (Python 3.13, `fastapi_scheduling_test`):
   `ConflictType`: succeeded
 - still not run: image rebuild, `alembic check`, browser checks
 
+### Progress after handoff (2026-10-02)
+
+- Steps 1-3 and 5 below are done: follow-ups committed as `c2661b9` and
+  `c41be75`; `3b3a7e7` cherry-picked as `c21d4ad` (full Docker backend suite
+  `176 passed`, `npm run build` succeeded); README gained Data Model, API
+  Overview, and Assumptions sections.
+- Skipped by user decision for the minimal deliverable: step 4 (`b20d53e` and
+  `stash@{0}`), Bonus 3, and step 7 (worktree cleanup).
+- Remaining: step 6.
+
 ### Next steps (each requires explicit user authorization to commit)
 
 1. Run the full Docker test suite (command below) on `bea8c38` plus the

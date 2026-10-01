@@ -461,12 +461,71 @@ The backend service CRUD, seeded reads, block configuration, error responses,
 timezone handling, and transaction lock are documented in
 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md). Try the API through
 `http://localhost:8000/docs`. The Angular interface at
-`http://localhost:4200` supports block configuration, service CRUD, validation
-feedback, and saved timeline inspection.
+`http://localhost:4200` has three pages: Schedule Editor (`/editor`, service
+CRUD and validation feedback), Schedule Viewer (`/schedule`, read-only
+timelines and playback), and Block Configuration (`/blocks`).
 
 The implemented PostgreSQL schema, timeline snapshot policy, mapping rules, and
 transaction ownership are documented in
 [`docs/PERSISTENCE_DESIGN.md`](docs/PERSISTENCE_DESIGN.md).
+
+---
+
+## Data Model
+
+PostgreSQL holds five tables. Full columns and constraints are in
+[`docs/PERSISTENCE_DESIGN.md`](docs/PERSISTENCE_DESIGN.md).
+
+| Table | Purpose |
+| --- | --- |
+| `vehicles` | Seeded vehicle IDs (`V1`, `V2`) |
+| `track_elements` | Yard, platforms, and blocks; blocks carry `traversal_seconds` and `interlocking_group` |
+| `track_connections` | Directed `from_element_id -> to_element_id` edges |
+| `services` | Vehicle and `start_time` of each service |
+| `service_path_elements` | Ordered path occurrences with their saved `[start, end)` interval snapshot |
+
+Platform arrival and departure are the saved interval of that platform
+occurrence, keyed by `path_index`, so repeated visits stay distinct.
+
+---
+
+## API Overview
+
+Full request, response, and error details are in
+[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md); interactive docs are at
+`http://localhost:8000/docs`.
+
+| Method and path | Behavior |
+| --- | --- |
+| `GET /services`, `GET /services/{id}` | Read saved services with timelines |
+| `POST /services`, `PUT /services/{id}` | Calculate, validate, and create or fully replace |
+| `DELETE /services/{id}` | Delete if the vehicle's remaining services stay continuous |
+| `GET /vehicles`, `GET /topology` | Seeded reference data |
+| `GET /blocks`, `PUT /blocks/{id}` | Read and set block traversal time |
+| `GET /schedule-analysis` | Bonus report: block occupancy and battery warnings |
+
+Errors: 404 unknown service or block, 422 invalid input or path, 409
+scheduling conflict (vehicle overlap, continuity, interlocking).
+
+---
+
+## Assumptions
+
+The complete rules are in [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md).
+
+- The user supplies the complete path; the system validates it and never
+  searches for a route.
+- Intervals are `[start, end)`; touching intervals do not conflict.
+- A yard occurrence has zero duration; platform time comes from the service's
+  own arrival and departure input.
+- Consecutive services of one vehicle must end and start at the same element;
+  deleting a service must not break that continuity.
+- Interlocking exclusivity is mandatory and rejected on write; general block
+  occupancy and battery issues are only reported.
+- Vehicles are `V1` and `V2`, and blocks default to 20 seconds. Neither value
+  is given by the assignment.
+- Changing a block's traversal time does not recalculate saved services.
+- Datetimes without an offset mean Asia/Taipei; responses use `+08:00`.
 
 ---
 
@@ -576,8 +635,8 @@ The initial implementation intentionally does not include:
 - automatic schedule generation
 - vehicle management
 - topology structure management; block traversal configuration is mandatory
-- battery simulation
-- schedule playback
+- write rejection for general block occupancy or battery conflicts (reported
+  only)
 - production-scale scheduling optimization
 
 These are kept outside the initial scope to prioritize correctness of the core scheduling model.
