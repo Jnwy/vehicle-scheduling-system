@@ -2,9 +2,9 @@
 
 Last updated: 2026-10-01
 
-This checkpoint intentionally stops after the first complete implementation and
-focused verification of Bonus 1 and Bonus 2. Final documentation, final Docker
-acceptance, and delivery review remain for the next stage.
+This checkpoint intentionally stops after implementation, two-axis code review,
+and correctness hardening of Bonus 1 and Bonus 2. Final documentation and final
+Docker acceptance remain for the next stage.
 
 ## Repository State
 
@@ -13,6 +13,7 @@ acceptance, and delivery review remain for the next stage.
 - Baseline checkpoint: `79b77ec docs: record completed baseline integration`
 - Bonus 1 checkpoint: `fbd3a18 feat: analyze schedule conflicts and battery state`
 - Bonus 2 checkpoint: `c37a41d feat: add interactive track map and schedule playback`
+- Review fix: `6eb424d fix: harden bonus battery and map behavior`
 - The temporary browser-acceptance services were deleted. `GET /services`
   returned an empty array at handoff.
 
@@ -55,7 +56,7 @@ acceptance, and delivery review remain for the next stage.
 
 - Baseline before Bonus work: `131 passed`.
 - Bonus domain/API focused suite: `54 passed`.
-- Full backend suite after Bonus 1: `142 passed`, with one existing upstream
+- Full backend suite after review hardening: `144 passed`, with one existing upstream
   Starlette/AnyIO deprecation warning.
 - Fresh frontend Docker image completed `npm ci`: 290 packages, zero reported
   vulnerabilities.
@@ -69,6 +70,22 @@ acceptance, and delivery review remain for the next stage.
 - A 390 x 844 browser viewport had no page-level horizontal overflow and used
   the vertical map layout.
 - Browser console inspection found no errors or warnings.
+- Dynamic viewport verification changed the SVG viewBox from desktop
+  `0 0 1040 500` to mobile `0 0 520 980` without reloading.
+
+## Review And Hardening — 2026-10-01
+
+- Standards and specification reviews ran independently against baseline
+  `79b77ec`.
+- Prevented battery values from dropping below zero and added a regression test.
+- Corrected the strict low-battery boundary so exactly 30 is not yet a conflict.
+- Replaced the old deferred/reject wording in `docs/DOMAIN_RULES.md` with the
+  user-confirmed warning policy.
+- Added map redraw on viewport changes. Responsive refinement is intentionally
+  limited to basic usability and avoiding page-level overflow.
+- Retained the current `AppComponent` structure for this checkpoint. It is large
+  and owns CRUD plus playback orchestration, but splitting it now is not a
+  correctness requirement and would increase the review surface before delivery.
 
 ## Decisions And Assumptions
 
@@ -86,19 +103,15 @@ acceptance, and delivery review remain for the next stage.
 
 ## Remaining Work
 
-1. Review the Bonus implementation for domain edge cases and frontend
-   maintainability. In particular, inspect low-battery ranges across an
-   instantaneous Yard visit and decide whether adjacent warning ranges should
-   remain merged or be displayed separately.
-2. Add final documentation to `docs/DOMAIN_RULES.md`, `docs/API_CONTRACT.md`,
+1. Add final documentation to `docs/API_CONTRACT.md`,
    `docs/IMPLEMENTATION_PLAN.md`, and `README.md`.
-3. Run the final integrated command `docker compose up --build -d`, followed by
-   the full 142-test suite, Alembic drift check, and Angular production build.
-4. Repeat browser acceptance after the final rebuild. Include UI-created service
+2. Run the final integrated command `docker compose up --build -d`, followed by
+   the full 144-test suite, Alembic drift check, and Angular production build.
+3. Repeat browser acceptance after the final rebuild. Include UI-created service
    success/warning feedback and explicit low-battery and insufficient-charge
    playback scenarios.
-5. Confirm database restart persistence and remove all acceptance services.
-6. Commit the final documentation and any review fixes. Do not push without new
+4. Confirm database restart persistence and remove all acceptance services.
+5. Commit the final documentation and any review fixes. Do not push without new
    user authorization.
 
 ## Next Agent Start Here
