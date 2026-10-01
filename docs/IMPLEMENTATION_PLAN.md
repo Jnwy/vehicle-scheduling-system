@@ -122,7 +122,12 @@ Rerun in Docker on 2026-10-02 (Python 3.13, `fastapi_scheduling_test`):
   Overview, and Assumptions sections.
 - Skipped by user decision for the minimal deliverable: step 4 (`b20d53e` and
   `stash@{0}`), Bonus 3, and step 7 (worktree cleanup).
-- Remaining: step 6.
+- Step 6 verified: `docker compose up --build` from a fresh clone with a new
+  volume migrated and seeded; `/editor`, `/schedule`, and `/blocks` loaded;
+  service create, block save, the 409 interlocking rejection, and the 422
+  rejection of `P1A -> P1B` behaved as expected. The 409 message was checked
+  through the API, not in the editor UI. The user delegated the merge
+  decision; the branch was fast-forwarded into `main` and pushed.
 
 ### Next steps (each requires explicit user authorization to commit)
 
