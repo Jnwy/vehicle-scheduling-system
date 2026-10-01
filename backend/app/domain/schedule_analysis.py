@@ -73,11 +73,13 @@ def analyze_schedule(
 ) -> ScheduleAnalysis:
     schedules = tuple(services)
     known_vehicle_ids = sorted({*vehicle_ids, *(service.vehicle_id for service in schedules)})
+    schedule_end = max((service.end_time for service in schedules), default=None)
     vehicles = tuple(
         _analyze_vehicle(
             vehicle_id,
             tuple(service for service in schedules if service.vehicle_id == vehicle_id),
             topology,
+            schedule_end,
         )
         for vehicle_id in known_vehicle_ids
     )
@@ -99,6 +101,7 @@ def _analyze_vehicle(
     vehicle_id: str,
     services: tuple[ServiceSchedule, ...],
     topology: RailwayTopology,
+    schedule_end: datetime | None,
 ) -> VehicleSimulation:
     ordered = sorted(
         enumerate(services),
@@ -110,24 +113,9 @@ def _analyze_vehicle(
 
     for _, service in ordered:
         if previous is not None and previous.end_time < service.start_time:
-            idle_end_battery = battery
-            if previous.end_location == "Y":
-                idle_seconds = (service.start_time - previous.end_time).total_seconds()
-                idle_end_battery = min(MAX_BATTERY, battery + idle_seconds / CHARGE_SECONDS_PER_UNIT)
-            segments.append(
-                SimulationSegment(
-                    SegmentType.IDLE,
-                    vehicle_id,
-                    None,
-                    None,
-                    previous.end_location,
-                    previous.end_time,
-                    service.start_time,
-                    battery,
-                    idle_end_battery,
-                )
-            )
-            battery = idle_end_battery
+            idle = _idle_segment(vehicle_id, previous, service.start_time, battery)
+            segments.append(idle)
+            battery = idle.battery_end
 
         for path_index, interval in enumerate(service.timeline):
             element = topology.elements[interval.element_id]
@@ -150,7 +138,34 @@ def _analyze_vehicle(
             battery = next_battery
         previous = service
 
+    # A vehicle stays where its last service ended while other vehicles still run.
+    if previous is not None and schedule_end is not None and previous.end_time < schedule_end:
+        segments.append(_idle_segment(vehicle_id, previous, schedule_end, battery))
+
     return VehicleSimulation(vehicle_id, tuple(segments))
+
+
+def _idle_segment(
+    vehicle_id: str,
+    previous: ServiceSchedule,
+    end_time: datetime,
+    battery: float,
+) -> SimulationSegment:
+    end_battery = battery
+    if previous.end_location == "Y":
+        idle_seconds = (end_time - previous.end_time).total_seconds()
+        end_battery = min(MAX_BATTERY, battery + idle_seconds / CHARGE_SECONDS_PER_UNIT)
+    return SimulationSegment(
+        SegmentType.IDLE,
+        vehicle_id,
+        None,
+        None,
+        previous.end_location,
+        previous.end_time,
+        end_time,
+        battery,
+        end_battery,
+    )
 
 
 def _resource_conflicts(

@@ -412,6 +412,11 @@ Battery state is derived for each vehicle across its ordered services:
 - battery decreases linearly during the block interval for playback
 - known idle time at Yard charges continuously at 1 unit per 12 seconds
 - time before the first service and idle time outside Yard do not charge
+- after its last service a vehicle stays at that service's end location until
+  the schedule ends; this trailing idle time follows the same charging rule
+  and still counts as low battery outside Yard
+- a vehicle has no position before its first service, because the model has
+  no initial vehicle location
 
 Battery below 30 while outside Yard is a low-battery conflict. Battery exactly
 30 is not yet a conflict. Leaving Yard below 80 is an insufficient-charge

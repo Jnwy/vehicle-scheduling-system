@@ -190,3 +190,56 @@ def test_empty_schedule_has_no_bounds_or_conflicts(topology):
     assert analysis.end_time is None
     assert analysis.conflicts == ()
     assert [vehicle.vehicle_id for vehicle in analysis.vehicles] == ["V1", "V2"]
+
+
+def test_vehicle_idles_at_final_location_until_schedule_end(topology):
+    first = schedule(1, "V1", ("B1", "P1"), 0, (20, 30))
+    second = schedule(2, "V2", ("B3",), 0, (100,))
+
+    analysis = analyze_schedule((first, second), topology)
+
+    trailing = analysis.vehicles[0].segments[-1]
+    assert trailing.segment_type is SegmentType.IDLE
+    assert trailing.service_id is None
+    assert trailing.element_id == "P1"
+    assert trailing.start_time == BASE_TIME + timedelta(seconds=50)
+    assert trailing.end_time == BASE_TIME + timedelta(seconds=100)
+    assert (trailing.battery_start, trailing.battery_end) == (79.0, 79.0)
+    assert analysis.end_time == BASE_TIME + timedelta(seconds=100)
+
+
+def test_trailing_idle_in_yard_charges_the_vehicle(topology):
+    first = schedule(1, "V1", ("B1", "Y"), 0, (20, 0))
+    second = schedule(2, "V2", ("B3",), 0, (44,))
+
+    analysis = analyze_schedule((first, second), topology)
+
+    trailing = analysis.vehicles[0].segments[-1]
+    assert trailing.segment_type is SegmentType.IDLE
+    assert trailing.element_id == "Y"
+    assert (trailing.battery_start, trailing.battery_end) == (79.0, 81.0)
+
+
+def test_last_finishing_vehicle_has_no_trailing_idle(topology):
+    only = schedule(1, "V1", ("B1", "P1"), 0, (20, 30))
+
+    analysis = analyze_schedule((only,), topology, ("V1", "V2"))
+
+    assert [segment.segment_type for segment in analysis.vehicles[0].segments] == [
+        SegmentType.SERVICE, SegmentType.SERVICE,
+    ]
+    assert analysis.vehicles[1].segments == ()
+    assert analysis.end_time == BASE_TIME + timedelta(seconds=50)
+
+
+def test_low_battery_outside_yard_lasts_through_trailing_idle(topology):
+    draining = schedule(1, "V1", ("B3",) * 51, 0, (1,) * 51)
+    other = schedule(2, "V2", ("B1",), 0, (100,))
+
+    analysis = analyze_schedule((draining, other), topology)
+
+    conflict = next(
+        item for item in analysis.conflicts if item.conflict_type is ConflictType.LOW_BATTERY
+    )
+    assert conflict.vehicle_ids == ("V1",)
+    assert conflict.end_time == BASE_TIME + timedelta(seconds=100)
