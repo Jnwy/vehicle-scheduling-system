@@ -149,9 +149,13 @@ Repository methods receive a session but do not commit independently. The
 application layer owns commit and rollback so service validation and all child
 writes can eventually share one transaction boundary.
 
-Concurrency control for two simultaneous schedule writes is not solved by the
-schema alone. The FastAPI/application integration milestone must select a
-locking or isolation strategy after repository behavior is available.
+The application now serializes service and block configuration writes with
+PostgreSQL transaction advisory lock `72634001`, acquired before reading data.
+Validation and repository writes share `session.begin()`; exceptions roll back
+the full operation. The default READ COMMITTED isolation sees committed data
+after waiting for this lock. Repository methods remain storage operations
+without scheduling validation or independent commit. See `API_CONTRACT.md` for
+the HTTP and concurrency contract.
 
 ## Seed Behavior
 

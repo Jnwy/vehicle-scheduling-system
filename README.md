@@ -396,6 +396,11 @@ Core scheduling rules remain below the HTTP layer.
 
 Further implementation details will be documented as development progresses.
 
+The backend service CRUD, seeded reads, block configuration, error responses,
+timezone handling, and transaction lock are documented in
+[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md). Try the API through
+`http://localhost:8000/docs`. Angular scheduling pages remain a later milestone.
+
 The implemented PostgreSQL schema, timeline snapshot policy, mapping rules, and
 transaction ownership are documented in
 [`docs/PERSISTENCE_DESIGN.md`](docs/PERSISTENCE_DESIGN.md).
@@ -467,14 +472,32 @@ docker compose up --build -d frontend
 
 ## Running Tests
 
-Run the backend unit tests inside the running backend container:
+Run domain tests inside the running backend container:
 
 ```bash
-docker compose exec backend python -m pytest tests
+docker compose exec backend python -m pytest tests/test_path_validation.py tests/test_timeline.py tests/test_vehicle_schedule.py tests/test_service_update.py
 ```
 
 Because the tests directory is mounted into the container, test-only changes do
 not require rebuilding the backend image.
+
+For the complete suite, create and migrate an independent test database once:
+
+```bash
+docker compose exec database createdb -U vehicle_scheduling fastapi_scheduling_test
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint alembic backend upgrade head
+```
+
+Then run all domain, PostgreSQL, API, and concurrency tests:
+
+```bash
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
+```
+
+API tests commit transactions and clear services in the designated test
+database. A database name ending in `_test` is required. Do not use an
+application database or run parallel suites against the same test database.
+Last verified result: **128 passed**.
 
 ---
 
@@ -488,7 +511,6 @@ The initial implementation intentionally does not include:
 - topology structure management; block traversal configuration is mandatory
 - battery simulation
 - schedule playback
-- timezone conversion and multi-timezone support
 - production-scale scheduling optimization
 
 These are kept outside the initial scope to prioritize correctness of the core scheduling model.

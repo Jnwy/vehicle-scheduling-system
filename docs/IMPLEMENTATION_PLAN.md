@@ -20,7 +20,7 @@ conflict and ask for clarification first.
 
 ## Current Status
 
-Last updated: 2026-09-30
+Last updated: 2026-10-01
 
 | Phase | Status | Verification |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ Last updated: 2026-09-30
 | Timeline calculation | Complete | Unit tests pass in Docker |
 | Mandatory vehicle schedule validation | Complete | Unit tests pass in Docker |
 | Persistence | Complete, reviewed | P0-P3 verified; review fixes verified in PostgreSQL and Docker |
-| FastAPI CRUD | Next | Persistence review complete; begin with API/application contract |
+| FastAPI CRUD | Complete | Domain update, HTTP, PostgreSQL transactions, and concurrency verified |
 | Minimal Angular UI | Not started | Deferred until API behavior is stable |
 | End-to-end Docker verification | Not started | Required before final delivery |
 | Block/interlocking conflicts | Deferred bonus | Not part of mandatory implementation |
@@ -37,18 +37,20 @@ Last updated: 2026-09-30
 Current full test command:
 
 ```bash
-docker compose exec backend python -m pytest tests
+docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
 ```
 
 Last verified result:
 
 ```text
-66 passed
+128 passed
 ```
 
 Latest completed milestone commits:
 
 ```text
+aed4abc feat: expose transactional scheduling API
+10f851a feat: validate vehicle schedules on update and deletion
 8262561 docs: document persistence design and milestone
 8d1129f feat: add PostgreSQL persistence layer
 3e233e1 feat: validate mandatory vehicle schedules
@@ -74,6 +76,7 @@ FastAPI or persistence code:
 - Mandatory vehicle validation rejects same-vehicle overlap and enforces
   predecessor/successor location continuity.
 - Update validation excludes the existing service with the same non-null ID.
+- Full update validation checks the final schedules of both affected vehicles.
 - Domain logic is independent from FastAPI, SQLAlchemy, and database sessions.
 
 See `docs/DOMAIN_RULES.md` for the complete rules and assumptions.
@@ -221,14 +224,148 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 
 ### Next Concrete Action
 
-Begin the FastAPI API/application contract when that phase is explicitly
-requested. Define service CRUD and supporting seeded topology/vehicle reads,
-mutable block configuration, request/response schemas, and HTTP error mapping.
-Select a locking or isolation strategy for concurrent schedule writes before
-implementing the shared validation/persistence transaction boundary. Angular
-and bonus conflict rules remain deferred.
+The FastAPI milestone is complete and the user authorized milestone commits on
+2026-10-01. Domain and API commits are recorded above; Docker/setup and milestone
+documentation are included in the following documentation commit. No push is
+authorized. User acceptance is next. Minimal Angular pages require a separate phase request;
+do not begin them automatically. Bonus conflict rules remain deferred.
+
+### Completed FastAPI Checkpoints — 2026-10-01
+
+- Branch: `codex/fastapi-scheduling`; prior uncommitted deletion domain/tests/docs
+  were preserved. No commit or push was authorized or performed.
+- Domain: final-schedule update validation replaces the original in place and
+  checks both affected vehicles. Same-time input-order behavior remains intact.
+  Initial checkpoint: 39 domain tests passed; additional legal reassignment and
+  zero-duration update tests were included in the final full suite.
+- API: all requested service CRUD, seeded reads, and block configuration routes
+  are implemented. Naive datetimes mean Asia/Taipei; offset inputs preserve the
+  instant; all datetime responses use +08:00. API checkpoint: 115 passed.
+- Transactions: service/configuration writers share transaction advisory lock
+  72634001 before reading, with application-owned commit/rollback. Repositories
+  remain without commit or domain validation. API tests use a separate `_test`
+  database because they commit real transactions and reset services there.
+- Integration: full Docker suite on `fastapi_scheduling_test`: 123 passed;
+  one dependency deprecation warning from Starlette/AnyIO. Alembic check found
+  no schema drift. Independent concurrent sessions produced one create success
+  and one conflict; shared block-write locking and rollback recovery passed.
+- `docker compose up --build -d` revealed CRLF in the Linux startup script.
+  Converted `backend/start.sh` to LF and added `*.sh text eol=lf` in
+  `.gitattributes`; rebuilt and confirmed successful backend startup.
+- Fresh `fastapi_workflow_test` database initialized by the normal startup
+  migration/seed script. Actual HTTP on port 8001 completed block configuration
+  (200), create (201), read (200), update (200), delete (204), empty list (200).
+  Main backend/database/frontend containers also ran successfully. This is
+  backend integration evidence, not final Angular feature acceptance.
+- Formal contract: `docs/API_CONTRACT.md`; domain decisions: Rules 11.1/11.2.
+  No unresolved domain decisions for this milestone. Remaining known limitation:
+  global lock serializes every schedule/configuration write by design.
+- Reviewable commit groups: domain validation/tests; application/API/tests and
+  HTTP contract; Docker line-ending rule and milestone/setup documentation.
+
+### FastAPI Code Review — 2026-10-01
+
+- Windows sandbox process startup still fails with error 1385; authorized
+  execution outside the sandbox allowed Git inspection and Docker tests.
+- Reviewed domain update/deletion rules, application transactions and advisory
+  locking, HTTP schemas/errors, repository mapping, and integration tests.
+- Reproduced and fixed post-commit topology queries for create/update responses:
+  a query failure previously returned 500 after persisting the write. The
+  application now returns the already loaded topology alongside the schedule;
+  response construction needs no further database read. Both regression cases
+  failed before the fix and pass afterward.
+- Reproduced historical offset output as +09:00 instead of the promised +08:00.
+  Naive inputs still use Asia/Taipei interpretation; all inputs normalize via
+  UTC to a fixed +08:00 offset for elapsed-time calculation and response output.
+  Reject UTC/output datetime overflow before saving, including early year-1
+  inputs whose UTC instant is outside Python's supported range.
+- Added five API regression cases. Complete isolated PostgreSQL/Docker suite:
+  128 passed, with the same third-party Starlette/AnyIO deprecation warning.
+  No unresolved review findings; no commit/push performed.
+
+### Authorized Milestone Commits — 2026-10-01
+
+- User approved the proposed commit grouping. Retained branch
+  `codex/fastapi-scheduling`; no additional branch was needed.
+- Pre-commit full Docker/PostgreSQL verification: 128 passed; staged changes
+  were reviewed and whitespace checks passed.
+- Domain commit `10f851a` includes update/deletion validation, tests, and rules.
+- API commit `aed4abc` includes application/HTTP code, schemas, dependency,
+  API tests and contract, and both verified review fixes.
+- Remaining setup/docs form the final commit: shell LF checkout rule, README,
+  persistence transaction documentation, and this milestone record.
+- User acceptance and any later phase remain separate. No push was requested.
+
+### Confirmed Decision: Service Deletion — 2026-10-01
+
+- User decision: reject deletion when it would break location continuity between
+  the remaining services for the same vehicle.
+- If deleting a middle service makes its predecessor and successor adjacent,
+  require the predecessor's end location to equal the successor's start location.
+  First, last, and only-service deletion has no newly adjacent pair to check.
+- A rejected deletion must report the continuity failure and preserve stored data.
+- Record the rule in `docs/DOMAIN_RULES.md`, Rule 11.1. The pure domain validator
+  is implemented, tested, and enforced by the application/API transaction.
+- FastAPI/application acceptance criteria: test rejected middle deletion,
+  permitted continuous middle deletion, first/last/only-service deletion,
+  independence from other vehicles, and unchanged data on rejection.
+- Validate and delete within the shared transaction/concurrency strategy. Keep
+  scheduling rules out of repository code. The completed HTTP mapping is defined
+  in `docs/API_CONTRACT.md`.
 
 ## Future Milestones
+
+### Deletion Domain Checkpoint — 2026-10-01
+
+- Implemented `validate_service_deletion(target, existing_services)` independently
+  of HTTP and persistence. It excludes the persisted target and other vehicles,
+  uses the same time-based neighbor selection as create/update validation, and
+  reports the remaining predecessor/successor continuity failure.
+- Added ten domain cases for broken/continuous deletion, first/last/only deletion,
+  other vehicles, immediate neighbors, zero duration, incomparable times, and
+  required target identity. Added two PostgreSQL integration cases for preserved
+  data on validation rejection and successful validated cascade deletion.
+- Full suite verified in Docker against `persistence_review`: `78 passed`.
+- Repository deletion remains a storage operation. HTTP enforcement, a shared
+  application transaction, and concurrency control are not implemented yet.
+- Next: finalize the API/application contract, including datetime input handling
+  and whether updates that remove a service from its old schedule must also check
+  the old remaining neighbors. Multiple simultaneous zero-duration services still
+  use existing input-order tie behavior; no new domain ordering was introduced.
+
+### Execution and Reporting Agreement — 2026-10-01
+
+- The agent handles implementation, relevant tests, integration checks, and
+  documentation. The user reviews material decisions and performs acceptance.
+- Development estimates describe total work time, not continuous user involvement.
+- Maintain Traditional Chinese reading copies of project documents in the
+  existing `.local-docs/` directory, which is already ignored by Git. Reuse
+  existing corresponding files where available and synchronize reading copies
+  when source documents change. Do not create a separate `.local/` directory.
+  Tracked English documents remain the authoritative source for durable
+  decisions and handoff context.
+- Report each checkpoint concisely: completed behavior, verification result,
+  remaining work, and any decision required from the user.
+- Record confirmed material decisions and checkpoint outcomes in this document;
+  keep domain rules in `docs/DOMAIN_RULES.md`. Do not rely on chat for handoff.
+- Announce lengthy work such as dependency/image builds, database integration
+  tests, and fresh-environment Docker verification before starting. Estimates
+  are provisional; report meaningful delays and blockers.
+- Proceed through the following checkpoints within the requested mandatory
+  delivery scope, without adding bonuses:
+  1. Define the API/application contract: payloads, error mapping, transaction
+     ownership, concurrency strategy, and the confirmed deletion rule.
+  2. Implement and test FastAPI service CRUD and supporting topology/vehicle
+     reads and block traversal configuration.
+  3. Implement the minimal Schedule Editor, read-only Schedule Viewer, and
+     Block Configuration pages; verify the frontend build and integration.
+  4. Verify fresh-database Docker startup, full backend tests, and the mandatory
+     workflow; finish README and tracked milestone status.
+  5. Provide a concise user acceptance checklist and disclose any remaining
+     failures or limitations. User acceptance is separate from agent checks.
+- Resolve routine implementation choices autonomously. Ask before ambiguous
+  changes to domain rules or topology. Explicit authorization is still required
+  for each commit; this agreement does not authorize commits or pushes.
 
 ### FastAPI CRUD
 
@@ -237,6 +374,8 @@ and bonus conflict rules remain deferred.
 - Map domain exceptions to HTTP responses.
 - Ensure create/update validation and persistence share one transaction
   boundary where required.
+- Implement the confirmed deletion continuity rule with domain tests and
+  application/API tests proving rejected deletion leaves persisted data unchanged.
 
 ### Minimal Angular UI
 
