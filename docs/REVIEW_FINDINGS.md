@@ -10,7 +10,9 @@ before any commit.
 | --- | --- |
 | F1 | Fixed in `c50754e` |
 | F2 | Fixed in `110afae` |
-| F3-F7 | Open |
+| F5 | Fixed in `304093e` |
+| F6 | Fixed in `267704a` |
+| F3, F4, F7 | Open |
 
 ## Verification Baseline
 
@@ -80,14 +82,15 @@ dwell, so it is reachable only through unusual configuration.
 
 ### F5 — Schedule Viewer is a flat list ordered by service ID
 
-Severity: medium against the requirement "clear and organized".
+Severity: medium against the requirement "clear and organized". Fixed in
+`304093e`.
 
 Services are not grouped by vehicle, not ordered by time, and there is no
 time-axis view of the whole schedule.
 
 ### F6 — A vehicle disappears from playback after its last service
 
-Severity: low.
+Severity: low. Fixed in `267704a`.
 
 `segmentIndexAt` in `frontend/src/app/playback.ts` returns no segment once the
 instant is past a vehicle's last segment, so the marker vanishes while other
@@ -174,6 +177,25 @@ F5:
 
 Decision needed: `AGENTS.md` excludes advanced UI styling unless requested.
 Step 1 is small; step 2 needs explicit approval.
+
+Phase B result (2026-10-02):
+
+- F6: `analyze_schedule` adds a trailing idle segment per vehicle from its
+  last service end to the schedule end, with yard charging and low-battery
+  detection applied. Four domain tests added; `docs/DOMAIN_RULES.md` updated.
+  No frontend change was needed.
+- F5: `frontend/src/app/schedule-overview.ts` groups services by vehicle in
+  start-time order and computes time-axis positions. The viewer shows a
+  per-vehicle axis with services, conflict intervals, and the playback
+  cursor. The user's instruction to run this phase was taken as approval of
+  the time-axis view; it uses plain CSS and adds no dependency.
+- Verification: full backend suite in Docker `186 passed`; `ng build`
+  succeeded; headless Chrome check confirmed the empty state, grouping, time
+  order differing from ID order, conflict bars, a finished vehicle staying on
+  the map as Idle, the expandable timeline, and no horizontal overflow at
+  390 px width.
+- Not done: no frontend unit tests for `schedule-overview.ts` (test setup
+  decision still open).
 
 ### Phase C — Domain edge case and delivery form (F4, F3)
 

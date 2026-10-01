@@ -66,12 +66,17 @@ dd455c6 docs: separate mandatory rules from bonus conflicts
 A full review of `main` at `2d1fe00` recorded seven findings (F1-F7) and a
 phased fix plan in [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md).
 
-Phase A is done on branch `worktree-review-findings-plan` and not yet merged
-into `main`: F2 (`110afae`, user-readable error messages) and F1 (`c50754e`,
-stale platform timings on edit). Full backend suite: `182 passed`.
+Phase A is merged into `main`: F2 (`110afae`, user-readable error messages)
+and F1 (`c50754e`, stale platform timings on edit).
 
-Next action: merge that branch after user review, then resolve the open
-decisions in that document before Phase B (F6, F5) and Phase C (F4, F3). This
+Phase B is done on branch `worktree-review-findings-plan` and not yet merged
+into `main`: F6 (`267704a`, trailing idle segment keeps vehicles on the map)
+and F5 (`304093e`, viewer grouped by vehicle with a time axis). Full backend
+suite: `186 passed`.
+
+Next action: merge Phase B after user review, then resolve the open decisions
+in that document before Phase C (F4 zero-duration rule, F3 Docker delivery
+form). Phase D (F7 documentation cleanup) comes last. This
 supersedes the older "Next Concrete Action" section below.
 
 ## Active Handoff: Integration Recovery (2026-10-02)
