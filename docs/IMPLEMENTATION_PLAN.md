@@ -45,7 +45,7 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 Last verified result:
 
 ```text
-176 passed
+178 passed
 ```
 
 Latest completed milestone commits:

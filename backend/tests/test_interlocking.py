@@ -64,3 +64,26 @@ def test_interlocking_checks_block_intervals_not_whole_service():
         schedule("B2", start=20, end=40, vehicle="V2", service_id=None),
         [existing], assignment_topology(),
     )
+
+
+def test_interlocking_ignores_services_of_the_same_vehicle():
+    # Same-vehicle overlap is the vehicle schedule rule, not an interlocking violation.
+    validate_interlocking_schedule(
+        schedule("B2", start=10, end=30, service_id=None),
+        [schedule("B1")], assignment_topology(),
+    )
+
+
+def test_interlocking_rejects_later_grouped_block_in_multi_block_path():
+    existing = schedule("B3", start=20, end=40)
+    candidate = ServiceSchedule(None, "V2", ("B12", "B14"), (
+        TimelineInterval("B12", BASE_TIME, BASE_TIME + timedelta(seconds=20)),
+        TimelineInterval("B14", BASE_TIME + timedelta(seconds=20),
+                         BASE_TIME + timedelta(seconds=40)),
+    ))
+
+    with pytest.raises(InterlockingConflictError) as error:
+        validate_interlocking_schedule(candidate, [existing], assignment_topology())
+
+    assert error.value.interlocking_group == "IG2"
+    assert error.value.conflicting_service_id == 1
