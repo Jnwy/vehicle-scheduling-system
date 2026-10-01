@@ -1,72 +1,17 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
+import {
+  BlockRequest, BlockResponse, PlaybackVehicleState, PlatformTiming,
+  ScheduleAnalysis, ScheduleConflict, ServiceRequest, ServiceResponse,
+  SimulationSegment, TopologyResponse, VehicleResponse,
+} from './models';
+import { TrackMapComponent } from './track-map.component';
+
 const API_BASE_URL = 'http://localhost:8000';
-
-type ElementType = 'YARD' | 'PLATFORM' | 'BLOCK';
-
-interface VehicleResponse {
-  id: string;
-}
-
-interface TrackElementResponse {
-  id: string;
-  elementType: ElementType;
-  traversalSeconds: number | null;
-  interlockingGroup: string | null;
-}
-
-interface TrackConnectionResponse {
-  fromElementId: string;
-  toElementId: string;
-}
-
-interface TopologyResponse {
-  elements: TrackElementResponse[];
-  connections: TrackConnectionResponse[];
-}
-
-interface BlockResponse {
-  id: string;
-  traversalSeconds: number | null;
-  interlockingGroup: string | null;
-}
-
-interface BlockRequest {
-  traversalSeconds: number;
-}
-
-interface PlatformTiming {
-  pathIndex: number;
-  arrivalTime: string;
-  departureTime: string;
-}
-
-interface TimelineInterval {
-  pathIndex: number;
-  elementId: string;
-  startTime: string;
-  endTime: string;
-}
-
-interface ServiceResponse {
-  id: number;
-  vehicleId: string;
-  startTime: string;
-  path: string[];
-  platformTimings: PlatformTiming[];
-  timeline: TimelineInterval[];
-}
-
-interface ServiceRequest {
-  vehicleId: string;
-  startTime: string;
-  path: string[];
-  platformTimings: PlatformTiming[];
-}
 
 interface TimingFormRow {
   pathIndex: number | null;
@@ -84,7 +29,7 @@ interface ServiceForm {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrackMapComponent],
   template: `
     <main>
       <header class="page-header">
@@ -97,8 +42,87 @@ interface ServiceForm {
         </button>
       </header>
 
-      <section *ngIf="notice()" class="notice" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'">
+      <section *ngIf="notice()" class="notice" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
         {{ notice() }}
+      </section>
+
+      <section class="panel map-panel">
+        <div class="section-header map-header">
+          <div>
+            <h2>Track map</h2>
+            <p *ngIf="mapMode() === 'path'">{{ pathSelection().join(' -> ') || 'Choose a starting element' }}</p>
+            <p *ngIf="mapMode() === 'playback'">{{ playbackClock() }}</p>
+          </div>
+          <div class="segmented" role="tablist" aria-label="Track map mode">
+            <button type="button" role="tab" [attr.aria-selected]="mapMode() === 'path'" [class.active]="mapMode() === 'path'" (click)="setMapMode('path')">
+              Path editing
+            </button>
+            <button type="button" role="tab" [attr.aria-selected]="mapMode() === 'playback'" [class.active]="mapMode() === 'playback'" (click)="setMapMode('playback')">
+              Playback
+            </button>
+          </div>
+        </div>
+
+        <div *ngIf="mapMode() === 'path'" class="map-toolbar">
+          <div class="path-steps" aria-label="Selected path">
+            <span *ngFor="let elementId of pathSelection(); let index = index">
+              <small>{{ index + 1 }}</small>{{ elementId }}
+            </span>
+          </div>
+          <div class="map-actions">
+            <button type="button" class="secondary small" [disabled]="pathSelection().length === 0" (click)="undoPathElement()">Undo</button>
+            <button type="button" class="secondary small" (click)="resetPathToY()">Reset to Y</button>
+            <button type="button" class="secondary small" (click)="choosePathStart()">Change start</button>
+          </div>
+        </div>
+
+        <div *ngIf="mapMode() === 'playback'" class="playback-controls">
+          <button type="button" [disabled]="!analysis().startTime" (click)="togglePlayback()">
+            {{ isPlaying() ? 'Pause' : 'Play' }}
+          </button>
+          <button type="button" class="secondary" [disabled]="!analysis().startTime" (click)="resetPlayback()">Reset</button>
+          <label class="speed-control">
+            Speed
+            <select [ngModel]="playbackSpeed()" (ngModelChange)="setPlaybackSpeed($event)">
+              <option [ngValue]="1">1x</option>
+              <option [ngValue]="10">10x</option>
+              <option [ngValue]="60">60x</option>
+              <option [ngValue]="300">300x</option>
+            </select>
+          </label>
+          <label class="seek-control">
+            Timeline
+            <input type="range" min="0" max="1000" step="1" [disabled]="!analysis().startTime" [ngModel]="playbackPosition()" (ngModelChange)="seekPlayback($event)" />
+          </label>
+        </div>
+
+        <app-track-map
+          [topology]="topology()"
+          [selectedPath]="mapMode() === 'path' ? pathSelection() : []"
+          [interactive]="mapMode() === 'path'"
+          [vehicles]="mapMode() === 'playback' ? currentVehicleStates() : []"
+          [conflictElementIds]="mapMode() === 'playback' ? activeConflictElementIds() : []"
+          (elementSelected)="selectPathElement($event)"
+        />
+
+        <div *ngIf="mapMode() === 'playback'" class="vehicle-status-grid">
+          <article *ngFor="let vehicle of currentVehicleStates()" class="vehicle-status">
+            <strong>{{ vehicle.vehicleId }}</strong>
+            <span>{{ vehicle.serviceId === null ? 'Idle' : 'Service #' + vehicle.serviceId }}</span>
+            <span>{{ vehicle.elementId }}</span>
+            <span [class.battery-low]="vehicle.battery < 30">{{ vehicle.battery | number:'1.0-1' }}%</span>
+          </article>
+          <p *ngIf="analysis().startTime && currentVehicleStates().length === 0" class="muted">No vehicle is active at this time.</p>
+        </div>
+
+        <div *ngIf="mapMode() === 'playback' && activeConflicts().length > 0" class="conflict-list" role="alert">
+          <strong>Active conflicts</strong>
+          <span *ngFor="let conflict of activeConflicts()">{{ conflictLabel(conflict) }}</span>
+        </div>
+        <div *ngIf="mapMode() === 'playback' && analysis().conflicts.length > 0 && activeConflicts().length === 0" class="conflict-summary">
+          {{ analysis().conflicts.length }} conflict{{ analysis().conflicts.length === 1 ? '' : 's' }} detected in this schedule.
+        </div>
+        <div *ngIf="mapMode() === 'playback' && !analysis().startTime" class="empty">No scheduled timeline to play.</div>
       </section>
 
       <section class="layout">
@@ -209,16 +233,20 @@ interface ServiceForm {
                 </label>
               </div>
 
-              <label>
-                Ordered path
-                <input
-                  name="pathText"
-                  type="text"
-                  required
-                  [(ngModel)]="serviceForm.pathText"
-                  placeholder="Y, B1, P1A"
-                />
-              </label>
+              <details class="advanced-path">
+                <summary>Advanced path input</summary>
+                <label>
+                  Ordered path
+                  <input
+                    name="pathText"
+                    type="text"
+                    required
+                    [ngModel]="serviceForm.pathText"
+                    (ngModelChange)="onPathTextChange($event)"
+                    placeholder="Y, B1, P1A"
+                  />
+                </label>
+              </details>
 
               <div class="timing-header">
                 <h3>Platform timings</h3>
@@ -433,6 +461,145 @@ interface ServiceForm {
         border-top: 4px solid #2d6f8f;
       }
 
+      .map-panel {
+        margin-bottom: 18px;
+        border-top: 4px solid #13795b;
+      }
+
+      .map-header {
+        margin-bottom: 14px;
+      }
+
+      .segmented {
+        display: inline-grid;
+        grid-template-columns: 1fr 1fr;
+        padding: 3px;
+        border: 1px solid #bdc9d4;
+        border-radius: 7px;
+        background: #edf1f5;
+      }
+
+      .segmented button {
+        min-height: 32px;
+        border: 0;
+        background: transparent;
+        color: #425466;
+        font-size: 13px;
+      }
+
+      .segmented button.active {
+        background: #ffffff;
+        color: #17202a;
+        box-shadow: 0 1px 3px rgb(23 32 42 / 18%);
+      }
+
+      .map-toolbar,
+      .playback-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 12px;
+      }
+
+      .path-steps,
+      .map-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .path-steps span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 30px;
+        padding: 3px 8px;
+        border: 1px solid #9ccfbb;
+        border-radius: 6px;
+        background: #edf8f3;
+        color: #075f46;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .path-steps small {
+        color: #40806b;
+      }
+
+      .playback-controls {
+        display: grid;
+        grid-template-columns: auto auto minmax(120px, 0.25fr) minmax(260px, 1fr);
+      }
+
+      .speed-control,
+      .seek-control {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+      }
+
+      .vehicle-status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0;
+        margin-top: 12px;
+        border-top: 1px solid #dce4eb;
+      }
+
+      .vehicle-status {
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        gap: 10px;
+        align-items: center;
+        min-width: 0;
+        padding: 10px 12px;
+        border-bottom: 1px solid #dce4eb;
+        font-size: 13px;
+      }
+
+      .battery-low {
+        color: #b42318;
+        font-weight: 800;
+      }
+
+      .conflict-list,
+      .conflict-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-left: 4px solid #b42318;
+        background: #fff1f0;
+        color: #8f241b;
+        font-size: 13px;
+      }
+
+      .conflict-list span + span::before {
+        content: '|';
+        margin-right: 10px;
+        color: #d28c86;
+      }
+
+      .advanced-path {
+        padding: 10px 12px;
+        border: 1px solid #d8e0e8;
+        border-radius: 7px;
+        background: #f8fafc;
+      }
+
+      .advanced-path summary {
+        cursor: pointer;
+        color: #435466;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .advanced-path label {
+        margin-top: 10px;
+      }
+
       .notice {
         margin-bottom: 16px;
         padding: 12px 14px;
@@ -451,6 +618,12 @@ interface ServiceForm {
       .notice.success {
         border-color: #b8d8c7;
         background: #edf8f1;
+      }
+
+      .notice.warning {
+        border-color: #e8cc8a;
+        background: #fff8e7;
+        color: #72510d;
       }
 
       button {
@@ -690,7 +863,24 @@ interface ServiceForm {
         .form-grid,
         .timing-row,
         .table-row,
-        .timeline .table-row {
+        .timeline .table-row,
+        .playback-controls,
+        .vehicle-status {
+          grid-template-columns: 1fr;
+        }
+
+        .map-toolbar,
+        .map-header {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .segmented {
+          width: 100%;
+        }
+
+        .speed-control,
+        .seek-control {
           grid-template-columns: 1fr;
         }
 
@@ -713,13 +903,16 @@ interface ServiceForm {
     `,
   ],
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
+  private animationFrameId: number | null = null;
+  private previousFrameTime: number | null = null;
 
   readonly vehicles = signal<VehicleResponse[]>([]);
   readonly topology = signal<TopologyResponse>({ elements: [], connections: [] });
   readonly blocks = signal<BlockResponse[]>([]);
   readonly services = signal<ServiceResponse[]>([]);
+  readonly analysis = signal<ScheduleAnalysis>({ startTime: null, endTime: null, vehicles: [], conflicts: [] });
   readonly blockDrafts = signal<Record<string, string>>({});
   readonly expandedServiceIds = signal<Set<number>>(new Set<number>());
   readonly loadingInitial = signal(false);
@@ -727,8 +920,13 @@ export class AppComponent implements OnInit {
   readonly savingBlockId = signal<string | null>(null);
   readonly savingService = signal(false);
   readonly notice = signal('');
-  readonly noticeKind = signal<'success' | 'error'>('success');
+  readonly noticeKind = signal<'success' | 'error' | 'warning'>('success');
   readonly editingServiceId = signal<number | null>(null);
+  readonly mapMode = signal<'path' | 'playback'>('path');
+  readonly pathSelection = signal<string[]>(['Y']);
+  readonly playbackTimeMs = signal<number | null>(null);
+  readonly playbackSpeed = signal(60);
+  readonly isPlaying = signal(false);
 
   readonly isBusy = computed(() => this.loadingInitial() || this.loadingServices() || this.savingService());
   readonly topologyGroups = computed(() => {
@@ -740,11 +938,81 @@ export class AppComponent implements OnInit {
       { label: 'Blocks', elements: elements.filter((element) => element.elementType === 'BLOCK') },
     ];
   });
+  readonly currentVehicleStates = computed<PlaybackVehicleState[]>(() => {
+    const instant = this.playbackTimeMs();
+    if (instant === null) {
+      return [];
+    }
+
+    const blockIds = new Set(
+      this.topology().elements
+        .filter((element) => element.elementType === 'BLOCK')
+        .map((element) => element.id),
+    );
+    return this.analysis().vehicles.flatMap((vehicle) => {
+      const index = this.segmentIndexAt(vehicle.segments, instant);
+      if (index < 0) {
+        return [];
+      }
+      const segment = vehicle.segments[index];
+      const start = Date.parse(segment.startTime);
+      const end = Date.parse(segment.endTime);
+      const fraction = end > start ? Math.max(0, Math.min(1, (instant - start) / (end - start))) : 0;
+      const next = vehicle.segments[index + 1];
+      return [{
+        vehicleId: vehicle.vehicleId,
+        serviceId: segment.serviceId,
+        elementId: segment.elementId,
+        nextElementId: blockIds.has(segment.elementId) && next ? next.elementId : segment.elementId,
+        progress: blockIds.has(segment.elementId) ? fraction : 0,
+        battery: segment.batteryStart + (segment.batteryEnd - segment.batteryStart) * fraction,
+      }];
+    });
+  });
+  readonly activeConflicts = computed(() => {
+    const instant = this.playbackTimeMs();
+    if (instant === null) {
+      return [];
+    }
+    return this.analysis().conflicts.filter((conflict) => {
+      const start = Date.parse(conflict.startTime);
+      const end = Date.parse(conflict.endTime);
+      return start === end ? instant === start : start <= instant && instant < end;
+    });
+  });
+  readonly activeConflictElementIds = computed(() => [
+    ...new Set(this.activeConflicts().flatMap((conflict) => conflict.elementIds)),
+  ]);
+  readonly playbackPosition = computed(() => {
+    const range = this.playbackRange();
+    const instant = this.playbackTimeMs();
+    if (range === null || instant === null || range.end === range.start) {
+      return 0;
+    }
+    return Math.round(((instant - range.start) / (range.end - range.start)) * 1000);
+  });
+  readonly playbackClock = computed(() => {
+    const instant = this.playbackTimeMs();
+    return instant === null ? 'No schedule loaded' : new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Taipei',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(new Date(instant));
+  });
 
   serviceForm: ServiceForm = this.createEmptyForm();
 
   ngOnInit(): void {
     this.refreshAll();
+  }
+
+  ngOnDestroy(): void {
+    this.stopPlayback();
   }
 
   refreshAll(): void {
@@ -756,11 +1024,13 @@ export class AppComponent implements OnInit {
       topology: this.http.get<TopologyResponse>(`${API_BASE_URL}/topology`),
       blocks: this.http.get<BlockResponse[]>(`${API_BASE_URL}/blocks`),
       services: this.http.get<ServiceResponse[]>(`${API_BASE_URL}/services`),
+      analysis: this.http.get<ScheduleAnalysis>(`${API_BASE_URL}/schedule-analysis`),
     }).subscribe({
-      next: ({ vehicles, topology, blocks, services }) => {
+      next: ({ vehicles, topology, blocks, services, analysis }) => {
         this.vehicles.set(vehicles);
         this.topology.set(topology);
         this.services.set(services);
+        this.applyAnalysis(analysis);
         this.applyBlocks(blocks);
         if (!this.serviceForm.vehicleId && vehicles.length > 0) {
           this.serviceForm.vehicleId = vehicles[0].id;
@@ -776,9 +1046,13 @@ export class AppComponent implements OnInit {
 
   loadServices(): void {
     this.loadingServices.set(true);
-    this.http.get<ServiceResponse[]>(`${API_BASE_URL}/services`).subscribe({
-      next: (services) => {
+    forkJoin({
+      services: this.http.get<ServiceResponse[]>(`${API_BASE_URL}/services`),
+      analysis: this.http.get<ScheduleAnalysis>(`${API_BASE_URL}/schedule-analysis`),
+    }).subscribe({
+      next: ({ services, analysis }) => {
         this.services.set(services);
+        this.applyAnalysis(analysis);
         this.loadingServices.set(false);
       },
       error: (error: unknown) => {
@@ -844,6 +1118,78 @@ export class AppComponent implements OnInit {
     this.serviceForm.platformTimings = rows;
   }
 
+  selectPathElement(elementId: string): void {
+    const next = [...this.pathSelection(), elementId];
+    this.setPathSelection(next, true);
+  }
+
+  undoPathElement(): void {
+    this.setPathSelection(this.pathSelection().slice(0, -1), true);
+  }
+
+  resetPathToY(): void {
+    this.setPathSelection(['Y'], true);
+  }
+
+  choosePathStart(): void {
+    this.setPathSelection([], true);
+  }
+
+  onPathTextChange(value: string): void {
+    this.serviceForm.pathText = value;
+    this.pathSelection.set(this.parsePathText());
+  }
+
+  setMapMode(mode: 'path' | 'playback'): void {
+    this.mapMode.set(mode);
+    if (mode === 'playback' && this.playbackTimeMs() === null) {
+      this.resetPlayback();
+    }
+    if (mode === 'path') {
+      this.stopPlayback();
+    }
+  }
+
+  togglePlayback(): void {
+    if (this.isPlaying()) {
+      this.stopPlayback();
+      return;
+    }
+    const range = this.playbackRange();
+    if (range === null) {
+      return;
+    }
+    if (this.playbackTimeMs() === null || this.playbackTimeMs()! >= range.end) {
+      this.playbackTimeMs.set(range.start);
+    }
+    this.isPlaying.set(true);
+    this.previousFrameTime = null;
+    this.animationFrameId = requestAnimationFrame((time) => this.advancePlayback(time));
+  }
+
+  resetPlayback(): void {
+    this.stopPlayback();
+    this.playbackTimeMs.set(this.playbackRange()?.start ?? null);
+  }
+
+  seekPlayback(value: number | string): void {
+    const range = this.playbackRange();
+    if (range === null) {
+      return;
+    }
+    const position = Math.max(0, Math.min(1000, Number(value)));
+    this.playbackTimeMs.set(range.start + ((range.end - range.start) * position) / 1000);
+  }
+
+  setPlaybackSpeed(value: number | string): void {
+    this.playbackSpeed.set(Number(value));
+  }
+
+  conflictLabel(conflict: ScheduleConflict): string {
+    const vehicles = conflict.vehicleIds.join(', ');
+    return `${conflict.conflictType.replaceAll('_', ' ')}: ${vehicles}`;
+  }
+
   submitService(): void {
     const request = this.buildServiceRequest();
     if (request === null) {
@@ -880,6 +1226,8 @@ export class AppComponent implements OnInit {
         departureTime: this.toDatetimeLocal(timing.departureTime),
       })),
     };
+    this.pathSelection.set([...service.path]);
+    this.mapMode.set('path');
     this.showSuccess(`Editing service #${service.id}.`);
   }
 
@@ -891,6 +1239,7 @@ export class AppComponent implements OnInit {
   resetForm(): void {
     const vehicleId = this.vehicles()[0]?.id ?? '';
     this.serviceForm = this.createEmptyForm(vehicleId);
+    this.pathSelection.set(['Y']);
   }
 
   confirmDelete(service: ServiceResponse): void {
@@ -938,7 +1287,7 @@ export class AppComponent implements OnInit {
     return {
       vehicleId,
       startTime: '',
-      pathText: '',
+      pathText: 'Y',
       platformTimings: [],
     };
   }
@@ -1027,15 +1376,21 @@ export class AppComponent implements OnInit {
       services: this.http.get<ServiceResponse[]>(`${API_BASE_URL}/services`),
       blocks: this.http.get<BlockResponse[]>(`${API_BASE_URL}/blocks`),
       topology: this.http.get<TopologyResponse>(`${API_BASE_URL}/topology`),
+      analysis: this.http.get<ScheduleAnalysis>(`${API_BASE_URL}/schedule-analysis`),
     }).subscribe({
-      next: ({ services, blocks, topology }) => {
+      next: ({ services, blocks, topology, analysis }) => {
         this.services.set(services);
         this.topology.set(topology);
+        this.applyAnalysis(analysis);
         this.applyBlocks(blocks);
         this.savingService.set(false);
         this.editingServiceId.set(null);
         this.resetForm();
-        this.showSuccess(successMessage);
+        if (analysis.conflicts.length > 0) {
+          this.showWarning(`${successMessage} ${analysis.conflicts.length} bonus conflict${analysis.conflicts.length === 1 ? '' : 's'} detected.`);
+        } else {
+          this.showSuccess(successMessage);
+        }
       },
       error: (error: unknown) => {
         this.savingService.set(false);
@@ -1051,12 +1406,98 @@ export class AppComponent implements OnInit {
     );
   }
 
+  private applyAnalysis(analysis: ScheduleAnalysis): void {
+    this.analysis.set(analysis);
+    const range = this.playbackRange(analysis);
+    const current = this.playbackTimeMs();
+    if (range === null) {
+      this.stopPlayback();
+      this.playbackTimeMs.set(null);
+    } else if (current === null || current < range.start || current > range.end) {
+      this.playbackTimeMs.set(range.start);
+    }
+  }
+
+  private setPathSelection(path: string[], updateTimingRows: boolean): void {
+    this.pathSelection.set(path);
+    this.serviceForm.pathText = path.join(', ');
+    if (updateTimingRows) {
+      this.fillPlatformRowsFromPath();
+    }
+  }
+
+  private playbackRange(analysis = this.analysis()): { start: number; end: number } | null {
+    if (analysis.startTime === null || analysis.endTime === null) {
+      return null;
+    }
+    return { start: Date.parse(analysis.startTime), end: Date.parse(analysis.endTime) };
+  }
+
+  private segmentIndexAt(segments: SimulationSegment[], instant: number): number {
+    const index = segments.findIndex((segment) => {
+      const start = Date.parse(segment.startTime);
+      const end = Date.parse(segment.endTime);
+      return start < end && start <= instant && instant < end;
+    });
+    if (index >= 0) {
+      return index;
+    }
+    const zeroLengthIndex = segments.findIndex((segment) => {
+      const start = Date.parse(segment.startTime);
+      return start === Date.parse(segment.endTime) && instant === start;
+    });
+    if (zeroLengthIndex >= 0) {
+      return zeroLengthIndex;
+    }
+    if (segments.length > 0 && instant === Date.parse(segments[segments.length - 1].endTime)) {
+      return segments.length - 1;
+    }
+    return -1;
+  }
+
+  private advancePlayback(frameTime: number): void {
+    if (!this.isPlaying()) {
+      return;
+    }
+    const range = this.playbackRange();
+    if (range === null) {
+      this.stopPlayback();
+      return;
+    }
+    if (this.previousFrameTime === null) {
+      this.previousFrameTime = frameTime;
+    }
+    const elapsed = frameTime - this.previousFrameTime;
+    this.previousFrameTime = frameTime;
+    const next = Math.min(range.end, (this.playbackTimeMs() ?? range.start) + elapsed * this.playbackSpeed());
+    this.playbackTimeMs.set(next);
+    if (next >= range.end) {
+      this.stopPlayback();
+      return;
+    }
+    this.animationFrameId = requestAnimationFrame((time) => this.advancePlayback(time));
+  }
+
+  private stopPlayback(): void {
+    this.isPlaying.set(false);
+    this.previousFrameTime = null;
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+  }
+
   private clearNotice(): void {
     this.notice.set('');
   }
 
   private showSuccess(message: string): void {
     this.noticeKind.set('success');
+    this.notice.set(message);
+  }
+
+  private showWarning(message: string): void {
+    this.noticeKind.set('warning');
     this.notice.set(message);
   }
 
