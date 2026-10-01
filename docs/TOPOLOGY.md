@@ -169,13 +169,16 @@ Blocks not listed above do not belong to an interlocking group.
 
 Traversal time is configurable per block.
 
-Do not hard-code a single traversal duration for all blocks.
+Timeline calculation must use each block's configured traversal duration.
 
 The backend should treat traversal time as block configuration data.
 
-The assignment does not provide an initial or default traversal time. A block
-remains unconfigured until a value is supplied, and timeline calculation must
-reject an unconfigured block.
+The assignment does not provide an initial or default traversal time. The
+project product default for seeded blocks B1-B14 is 20 seconds. Seed execution
+also fills existing null values with 20, while preserving non-null custom
+values. Users may change the non-negative integer configuration but cannot
+clear it. Timeline calculation still rejects an unconfigured block supplied
+outside this seeded configuration.
 
 ---
 

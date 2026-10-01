@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -71,12 +71,34 @@ def make_schedule(
 
 
 def test_seed_creates_expected_vehicles_and_topology(session):
+    for model in (ServiceRecord, TrackConnectionRecord, TrackElementRecord, VehicleRecord):
+        session.execute(delete(model))
+    seed_database(session)
+
     assert session.scalars(select(VehicleRecord.id).order_by(VehicleRecord.id)).all() == [
         "V1",
         "V2",
     ]
     assert session.scalar(select(func.count()).select_from(TrackElementRecord)) == 21
     assert session.scalar(select(func.count()).select_from(TrackConnectionRecord)) == 28
+    blocks = session.scalars(
+        select(TrackElementRecord).where(TrackElementRecord.element_type == "BLOCK")
+    ).all()
+    assert {block.id for block in blocks} == {f"B{number}" for number in range(1, 15)}
+    assert all(block.traversal_seconds == 20 for block in blocks)
+
+
+@pytest.mark.parametrize("existing, expected", [(None, 20), (0, 0), (42, 42)])
+def test_seed_backfills_only_missing_block_traversal_time(session, existing, expected):
+    block = session.get(TrackElementRecord, "B1")
+    block.traversal_seconds = existing
+    session.flush()
+
+    seed_database(session)
+    seed_database(session)
+
+    session.refresh(block)
+    assert block.traversal_seconds == expected
 
 
 def test_seed_is_idempotent_and_preserves_block_configuration(session):

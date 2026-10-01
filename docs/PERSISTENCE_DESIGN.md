@@ -48,9 +48,11 @@ Block traversal time is different: the assignment requires a read/write Block
 Configuration page. Therefore `traversal_seconds` is mutable configuration and
 must be persisted even though the surrounding topology structure is fixed.
 
-Blocks start with `traversal_seconds = NULL` because the assignment provides no
-default. Timeline calculation rejects a service path containing an
-unconfigured block.
+Seeded blocks B1-B14 start with `traversal_seconds = 20` as a project product
+default; the assignment supplies no default. Seed execution fills existing
+null values with 20 and preserves non-null custom values. API updates cannot
+clear this configuration. Timeline calculation still rejects an unconfigured
+block supplied outside the seed.
 
 ## Proposed Schema
 
@@ -161,7 +163,7 @@ the HTTP and concurrency contract.
 
 - Seed operations must be idempotent.
 - Track elements and directed connections come from the assignment topology.
-- Blocks are initially unconfigured (`traversal_seconds = NULL`).
+- Blocks B1-B14 initially use 20 seconds; existing null values are filled with 20.
 - The vehicle seed is `V1`, `V2`.
 - Seed execution must not overwrite user-configured traversal values.
 
