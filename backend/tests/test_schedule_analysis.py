@@ -78,25 +78,24 @@ def test_half_open_block_intervals_that_only_touch_do_not_conflict(topology):
     assert ConflictType.BLOCK_OCCUPANCY not in conflict_types(analysis)
 
 
-def test_detects_interlocking_overlap_on_different_blocks(topology):
+def test_interlocking_groups_are_left_to_write_validation(topology):
+    # Different blocks in one group are rejected at create/update time, so the
+    # Bonus analysis does not emit a second, redundant interlocking warning.
     first = schedule(1, "V1", ("B1",), 0, (20,))
     second = schedule(2, "V2", ("B2",), 10, (20,))
 
     analysis = analyze_schedule((first, second), topology)
 
-    assert conflict_types(analysis) == [ConflictType.INTERLOCKING]
-    assert analysis.conflicts[0].resource_id == "IG1"
-    assert analysis.conflicts[0].element_ids == ("B1", "B2")
+    assert conflict_types(analysis) == []
 
 
-def test_same_block_does_not_duplicate_interlocking_warning(topology):
+def test_same_grouped_block_reports_one_block_conflict(topology):
     first = schedule(1, "V1", ("B1",), 0, (20,))
     second = schedule(2, "V2", ("B1",), 10, (20,))
 
     analysis = analyze_schedule((first, second), topology)
 
-    assert conflict_types(analysis).count(ConflictType.BLOCK_OCCUPANCY) == 1
-    assert ConflictType.INTERLOCKING not in conflict_types(analysis)
+    assert conflict_types(analysis) == [ConflictType.BLOCK_OCCUPANCY]
 
 
 def test_derives_block_consumption_and_yard_charging(topology):

@@ -1,5 +1,5 @@
 export type ElementType = 'YARD' | 'PLATFORM' | 'BLOCK';
-export type ConflictType = 'BLOCK_OCCUPANCY' | 'INTERLOCKING' | 'LOW_BATTERY' | 'INSUFFICIENT_CHARGE';
+export type ConflictType = 'BLOCK_OCCUPANCY' | 'LOW_BATTERY' | 'INSUFFICIENT_CHARGE';
 export type SegmentType = 'SERVICE' | 'IDLE';
 
 export interface VehicleResponse {

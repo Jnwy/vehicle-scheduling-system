@@ -23,8 +23,10 @@ Docker acceptance remain for the next stage.
 
 - Added a pure domain schedule-analysis service with no FastAPI or SQLAlchemy
   dependency.
-- Detects cross-vehicle block occupancy and interlocking conflicts with
-  `[start, end)` interval semantics.
+- Detects cross-vehicle block occupancy with `[start, end)` interval
+  semantics. Interlocking group exclusivity is mandatory write validation
+  (409), so the analysis no longer reports a separate interlocking warning
+  (decision 2026-10-02).
 - Derives battery state from persisted timeline snapshots: initial 80, maximum
   100, one unit consumed per block, and one unit charged per 12 seconds at the
   yard.
@@ -96,8 +98,6 @@ Docker acceptance remain for the next stage.
 - Partial 12-second charging intervals add fractional battery units.
 - Battery decreases linearly during block playback and by exactly one unit over
   the complete block interval.
-- Same-block overlap emits a block conflict without a redundant interlocking
-  warning for the same pair and interval.
 - Bonus conflicts remain persisted warnings so the playback can visualize them.
 - Automatic route finding and Bonus 3 schedule generation remain out of scope.
 

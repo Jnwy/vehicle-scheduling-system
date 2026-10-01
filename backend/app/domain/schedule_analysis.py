@@ -18,7 +18,6 @@ MINIMUM_DEPARTURE_BATTERY = 80.0
 
 class ConflictType(StrEnum):
     BLOCK_OCCUPANCY = "BLOCK_OCCUPANCY"
-    INTERLOCKING = "INTERLOCKING"
     LOW_BATTERY = "LOW_BATTERY"
     INSUFFICIENT_CHARGE = "INSUFFICIENT_CHARGE"
 
@@ -158,6 +157,8 @@ def _resource_conflicts(
     services: tuple[ServiceSchedule, ...],
     topology: RailwayTopology,
 ) -> tuple[ScheduleConflict, ...]:
+    # Interlocking group exclusivity is mandatory and rejected at write time, so
+    # persisted schedules cannot contain it; only shared blocks are reported here.
     block_segments = [
         (service, path_index, interval)
         for service in services
@@ -169,38 +170,24 @@ def _resource_conflicts(
     for (first_service, _, first), (second_service, _, second) in combinations(block_segments, 2):
         if first_service.vehicle_id == second_service.vehicle_id:
             continue
+        if first.element_id != second.element_id:
+            continue
         overlap = _overlap(first.start_time, first.end_time, second.start_time, second.end_time)
         if overlap is None:
             continue
         service_ids = _service_ids(first_service, second_service)
         vehicle_ids = tuple(sorted((first_service.vehicle_id, second_service.vehicle_id)))
-        if first.element_id == second.element_id:
-            conflicts.append(
-                ScheduleConflict(
-                    ConflictType.BLOCK_OCCUPANCY,
-                    first.element_id,
-                    *overlap,
-                    vehicle_ids,
-                    service_ids,
-                    (first.element_id,),
-                    f"Block {first.element_id} is occupied by multiple vehicles.",
-                )
+        conflicts.append(
+            ScheduleConflict(
+                ConflictType.BLOCK_OCCUPANCY,
+                first.element_id,
+                *overlap,
+                vehicle_ids,
+                service_ids,
+                (first.element_id,),
+                f"Block {first.element_id} is occupied by multiple vehicles.",
             )
-            continue
-        first_group = topology.elements[first.element_id].interlocking_group
-        second_group = topology.elements[second.element_id].interlocking_group
-        if first_group is not None and first_group == second_group:
-            conflicts.append(
-                ScheduleConflict(
-                    ConflictType.INTERLOCKING,
-                    first_group,
-                    *overlap,
-                    vehicle_ids,
-                    service_ids,
-                    tuple(sorted((first.element_id, second.element_id))),
-                    f"Interlocking group {first_group} is occupied by multiple vehicles.",
-                )
-            )
+        )
     return tuple(conflicts)
 
 
