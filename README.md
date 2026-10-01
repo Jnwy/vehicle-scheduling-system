@@ -399,7 +399,9 @@ Further implementation details will be documented as development progresses.
 The backend service CRUD, seeded reads, block configuration, error responses,
 timezone handling, and transaction lock are documented in
 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md). Try the API through
-`http://localhost:8000/docs`. Angular scheduling pages remain a later milestone.
+`http://localhost:8000/docs`. The Angular interface at
+`http://localhost:4200` supports block configuration, service CRUD, validation
+feedback, and saved timeline inspection.
 
 The implemented PostgreSQL schema, timeline snapshot policy, mapping rules, and
 transaction ownership are documented in
@@ -497,7 +499,7 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 API tests commit transactions and clear services in the designated test
 database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
-Last verified result: **128 passed**.
+Last verified result: **131 passed**.
 
 ---
 

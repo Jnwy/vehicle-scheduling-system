@@ -30,8 +30,8 @@ Last updated: 2026-10-01
 | Mandatory vehicle schedule validation | Complete | Unit tests pass in Docker |
 | Persistence | Complete, reviewed | P0-P3 verified; review fixes verified in PostgreSQL and Docker |
 | FastAPI CRUD | Complete | Domain update, HTTP, PostgreSQL transactions, and concurrency verified |
-| Minimal Angular UI | Not started | Deferred until API behavior is stable |
-| End-to-end Docker verification | Not started | Required before final delivery |
+| Minimal Angular UI | Complete | Build and desktop/narrow browser checks pass |
+| End-to-end Docker verification | Complete | Integrated Docker build, browser workflow, restart, and persistence verified |
 | Block/interlocking conflicts | Deferred bonus | Not part of mandatory implementation |
 
 Current full test command:
@@ -43,12 +43,14 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 Last verified result:
 
 ```text
-128 passed
+131 passed
 ```
 
 Latest completed milestone commits:
 
 ```text
+c82b907 feat: add minimal Angular scheduling interface
+ea8b899 fix: allow Angular development origins
 aed4abc feat: expose transactional scheduling API
 10f851a feat: validate vehicle schedules on update and deletion
 8262561 docs: document persistence design and milestone
@@ -224,11 +226,26 @@ docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_s
 
 ### Next Concrete Action
 
-The FastAPI milestone is complete and the user authorized milestone commits on
-2026-10-01. Domain and API commits are recorded above; Docker/setup and milestone
-documentation are included in the following documentation commit. No push is
-authorized. User acceptance is next. Minimal Angular pages require a separate phase request;
-do not begin them automatically. Bonus conflict rules remain deferred.
+The mandatory baseline is complete on `codex/basic-version-integration`. No
+push is authorized. User acceptance is next. Block and interlocking conflict
+rules remain an optional bonus and require an explicit phase request.
+
+### Completed Angular and Final Integration — 2026-10-01
+
+- Added the standalone Schedule Editor with topology reference, block traversal
+  configuration, service CRUD, platform timing rows, and timeline inspection.
+- Added browser-safe CORS for `localhost:4200` and `127.0.0.1:4200` without
+  credentials; other origins do not receive an allow-origin response header.
+- Docker images rebuilt successfully; frontend `npm ci` and production build
+  completed with no reported dependency vulnerabilities.
+- Full Docker backend suite: `131 passed` with one upstream Starlette/AnyIO
+  deprecation warning. `alembic check` reported no schema drift.
+- Browser acceptance completed block configuration, service create, timeline
+  display, update, overlap rejection (409), invalid-path rejection (422), and
+  deletion. The test service was removed afterward.
+- Restarting database, backend, and frontend preserved block `B1` traversal at
+  20 seconds; all containers recovered healthy and the service list remained
+  empty.
 
 ### Completed FastAPI Checkpoints — 2026-10-01
 
