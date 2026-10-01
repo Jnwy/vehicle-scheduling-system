@@ -121,27 +121,42 @@ def test_derives_block_consumption_and_yard_charging(topology):
 
 
 def test_yard_charging_is_fractional_and_capped_at_100(topology):
-    first = schedule(1, "V1", ("Y",), 0, (0,))
-    second = schedule(2, "V1", ("Y", "B1"), 246, (0, 12))
+    first = schedule(1, "V1", ("B1", "Y"), 0, (12, 0))
+    second = schedule(2, "V1", ("Y", "B1"), 18, (0, 12))
+    third = schedule(3, "V1", ("B1", "Y"), 30, (12, 0))
+    fourth = schedule(4, "V1", ("Y", "B1"), 312, (0, 12))
 
-    analysis = analyze_schedule((first, second), topology)
-    idle = next(segment for segment in analysis.vehicles[0].segments if segment.segment_type is SegmentType.IDLE)
+    analysis = analyze_schedule((first, second, third, fourth), topology)
+    idle_segments = [
+        segment for segment in analysis.vehicles[0].segments
+        if segment.segment_type is SegmentType.IDLE
+    ]
 
-    assert idle.battery_start == 80
-    assert idle.battery_end == 100
+    assert idle_segments[0].battery_start == 79
+    assert idle_segments[0].battery_end == 79.5
+    assert idle_segments[-1].battery_end == 100
+
+
+def test_battery_never_drops_below_zero(topology):
+    blocks = tuple("B1" for _ in range(90))
+    service = schedule(1, "V1", blocks, 0, tuple(1 for _ in blocks))
+
+    analysis = analyze_schedule((service,), topology)
+
+    assert analysis.vehicles[0].segments[-1].battery_end == 0
 
 
 def test_reports_insufficient_charge_when_leaving_yard_below_80(topology):
     first = schedule(1, "V1", ("B1", "Y"), 0, (12, 0))
-    second = schedule(2, "V1", ("Y", "B1"), 6, (0, 12))
+    second = schedule(2, "V1", ("Y", "B1"), 18, (0, 12))
 
     analysis = analyze_schedule((first, second), topology)
 
     conflict = next(item for item in analysis.conflicts if item.conflict_type is ConflictType.INSUFFICIENT_CHARGE)
     assert conflict.vehicle_ids == ("V1",)
     assert conflict.service_ids == (2,)
-    assert conflict.start_time == BASE_TIME + timedelta(seconds=6)
-    assert conflict.end_time == BASE_TIME + timedelta(seconds=18)
+    assert conflict.start_time == BASE_TIME + timedelta(seconds=18)
+    assert conflict.end_time == BASE_TIME + timedelta(seconds=30)
 
 
 def test_reports_low_battery_from_threshold_crossing_until_yard(topology):
@@ -151,11 +166,22 @@ def test_reports_low_battery_from_threshold_crossing_until_yard(topology):
     analysis = analyze_schedule((service,), topology)
 
     low = next(item for item in analysis.conflicts if item.conflict_type is ConflictType.LOW_BATTERY)
-    assert low.start_time == BASE_TIME + timedelta(seconds=500)
+    assert low.start_time == BASE_TIME + timedelta(seconds=500, microseconds=1)
     assert low.end_time == BASE_TIME + timedelta(seconds=540)
     assert low.vehicle_ids == ("V1",)
     assert low.service_ids == (1,)
     assert {"B1", "B3", "P1"}.issubset(set(low.element_ids))
+
+
+def test_battery_at_exactly_30_is_not_yet_a_low_battery_conflict(topology):
+    blocks = tuple("B1" for _ in range(51))
+    service = schedule(1, "V1", blocks, 0, tuple(10 for _ in blocks))
+
+    analysis = analyze_schedule((service,), topology)
+    low = next(item for item in analysis.conflicts if item.conflict_type is ConflictType.LOW_BATTERY)
+
+    assert low.start_time == BASE_TIME + timedelta(seconds=500, microseconds=1)
+    assert low.end_time == BASE_TIME + timedelta(seconds=510)
 
 
 def test_empty_schedule_has_no_bounds_or_conflicts(topology):
@@ -165,4 +191,3 @@ def test_empty_schedule_has_no_bounds_or_conflicts(topology):
     assert analysis.end_time is None
     assert analysis.conflicts == ()
     assert [vehicle.vehicle_id for vehicle in analysis.vehicles] == ["V1", "V2"]
-

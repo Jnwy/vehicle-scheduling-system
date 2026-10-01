@@ -297,8 +297,9 @@ The mandatory scheduling rules currently use:
 VEHICLE
 ```
 
-`BLOCK` and `INTERLOCKING` occupancy are reserved for the deferred bonus
-conflict rules.
+Bonus schedule analysis derives `BLOCK` and `INTERLOCKING` occupancy directly
+from persisted service timeline snapshots. These occupancies are not stored as
+separate database state.
 
 ---
 
@@ -342,18 +343,21 @@ Conflict.
 
 ---
 
-# 7. Block Conflict (Deferred Bonus)
+# 7. Block Conflict
 
 A block may only be occupied by one service at a time.
 
-If two services occupy the same block during overlapping intervals, the new or updated service must be rejected.
+If services assigned to different vehicles occupy the same block during
+overlapping intervals, schedule analysis reports a block occupancy conflict.
 
-This rule is an assignment bonus and is not part of the mandatory vehicle
-schedule validation phase.
+Bonus conflicts are warnings rather than write validation. The conflicting
+services remain persisted so Schedule Simulation can visualize the conflict.
+This does not change mandatory same-vehicle validation, which still rejects
+overlap or location discontinuity before persistence.
 
 ---
 
-# 8. Interlocking Conflict (Deferred Bonus)
+# 8. Interlocking Conflict
 
 Blocks may belong to an interlocking group.
 
@@ -375,8 +379,27 @@ This should be treated as:
 resource = interlocking:IG1
 ```
 
-This rule is an assignment bonus and is not part of the mandatory vehicle
-schedule validation phase.
+Schedule analysis reports overlapping occupancy of different blocks in the
+same group as an interlocking conflict. When both vehicles occupy the same
+block, the block conflict is reported without a duplicate interlocking warning.
+
+Like block conflicts, interlocking conflicts are persisted schedule warnings
+and do not reject the service write.
+
+## 8.1 Battery Analysis
+
+Battery state is derived for each vehicle across its ordered services:
+
+- initial battery is 80 at the first service start
+- maximum battery is 100 and minimum battery is 0
+- each completed block traversal consumes 1 unit
+- battery decreases linearly during the block interval for playback
+- known idle time at Yard charges continuously at 1 unit per 12 seconds
+- time before the first service and idle time outside Yard do not charge
+
+Battery below 30 while outside Yard is a low-battery conflict. Battery exactly
+30 is not yet a conflict. Leaving Yard below 80 is an insufficient-charge
+conflict. Both are warning analysis and do not reject persistence.
 
 ---
 
@@ -458,9 +481,9 @@ Existing services are treated as previously validated data. Creation checks
 whether the candidate can be inserted among them. Update validation also checks
 the remaining old schedule after replacing the target (Rule 11.2).
 
-If the block and interlocking bonus is implemented later, its occupancy and
-conflict checks can be added after timeline calculation without changing the
-mandatory vehicle rules.
+Bonus block, interlocking, and battery analysis runs from the authoritative
+persisted schedule after writes and on `GET /schedule-analysis`. It deliberately
+does not participate in this mandatory write-validation pipeline.
 
 ---
 
@@ -526,4 +549,6 @@ Mandatory scheduling tests include:
   allow a continuous pair and first/last/only-service deletion; verify rejected
   deletion preserves stored data and other vehicles do not affect the check
 
-Block and interlocking conflict tests belong to the deferred bonus phase.
+Bonus domain tests cover block occupancy, interlocking groups, half-open
+boundaries, battery consumption and limits, fractional Yard charging, low
+battery, and insufficient departure charge.

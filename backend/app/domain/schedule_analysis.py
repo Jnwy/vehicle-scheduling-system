@@ -134,7 +134,7 @@ def _analyze_vehicle(
             element = topology.elements[interval.element_id]
             next_battery = battery
             if element.element_type is TrackElementType.BLOCK:
-                next_battery = battery - BLOCK_BATTERY_COST
+                next_battery = max(0.0, battery - BLOCK_BATTERY_COST)
             segments.append(
                 SimulationSegment(
                     SegmentType.SERVICE,
@@ -262,7 +262,8 @@ def _low_battery_range(
     ):
         battery_drop = segment.battery_start - segment.battery_end
         fraction = (segment.battery_start - LOW_BATTERY_THRESHOLD) / battery_drop
-        start_time += (segment.end_time - segment.start_time) * fraction
+        threshold_time = start_time + (segment.end_time - segment.start_time) * fraction
+        start_time = min(segment.end_time, threshold_time + timedelta(microseconds=1))
     return (
         start_time,
         segment.end_time,

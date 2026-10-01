@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
 import * as d3 from 'd3';
 
 import { PlaybackVehicleState, TopologyResponse, TrackElementResponse } from './models';
@@ -85,6 +85,11 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     if (this.svgRef && Object.keys(changes).length > 0) {
       this.render();
     }
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.render();
   }
 
   private render(): void {
