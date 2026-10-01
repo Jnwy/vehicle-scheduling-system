@@ -508,6 +508,70 @@ select:focus {
   flex-wrap: wrap;
 }
 
+.vehicle-group {
+  padding: 12px 0;
+  border-top: 1px solid #e1e8ef;
+}
+
+.vehicle-group-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.vehicle-group-header h3 {
+  font-size: 16px;
+}
+
+.vehicle-empty {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.time-axis {
+  position: relative;
+  height: 30px;
+  margin-bottom: 4px;
+  border: 1px solid #d5dee7;
+  border-radius: 6px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.axis-service,
+.axis-conflict,
+.axis-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.axis-service {
+  min-width: 3px;
+  padding: 0 4px;
+  border-right: 1px solid #ffffff;
+  background: #4e79a7;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 28px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.axis-conflict {
+  top: auto;
+  height: 7px;
+  min-width: 3px;
+  background: #b42318;
+}
+
+.axis-cursor {
+  width: 2px;
+  background: #17202a;
+}
+
 @media (max-width: 980px) {
   main {
     padding: 16px;

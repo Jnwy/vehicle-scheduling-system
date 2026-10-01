@@ -8,6 +8,7 @@ import { SchedulingApi } from './scheduling-api.service';
 import { ScheduleAnalysis, ServiceResponse, TopologyResponse, ScheduleConflict } from './models';
 import { errorMessage, formatForDisplay } from './page-helpers';
 import { conflictsAt, playbackSliderPosition, scheduleRange, vehicleStatesAt } from './playback';
+import { buildVehicleOverviews, serviceEndTime } from './schedule-overview';
 import { TrackMapComponent } from './track-map.component';
 
 @Component({
@@ -34,6 +35,8 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
   readonly isPlaying = signal(false);
   readonly isBusy = computed(() => this.loadingInitial());
   readonly formatForDisplay = formatForDisplay;
+  readonly serviceEndTime = serviceEndTime;
+  readonly vehicleOverviews = computed(() => buildVehicleOverviews(this.services(), this.analysis()));
   readonly currentVehicleStates = computed(() =>
     vehicleStatesAt(this.analysis(), this.topology(), this.playbackTimeMs()),
   );
