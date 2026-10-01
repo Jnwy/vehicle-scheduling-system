@@ -522,3 +522,55 @@ def test_continuity_message_names_an_unsaved_candidate_in_words() -> None:
         "to the new service at 'Y'."
     )
     assert exc_info.value.to_service_id is None
+
+
+def test_zero_duration_candidate_inside_another_service_is_rejected() -> None:
+    existing = make_schedule(service_id=1, start_seconds=0, end_seconds=20)
+    candidate = make_schedule(
+        service_id=None, start_location="P3A", end_location="P3A",
+        start_seconds=10, end_seconds=10,
+    )
+
+    with pytest.raises(VehicleOverlapError) as exc_info:
+        validate_vehicle_schedule(candidate, [existing])
+
+    assert exc_info.value.conflicting_service_id == 1
+
+
+def test_candidate_enclosing_a_zero_duration_service_is_rejected() -> None:
+    existing = make_schedule(
+        service_id=1, start_location="P3A", end_location="P3A",
+        start_seconds=10, end_seconds=10,
+    )
+    candidate = make_schedule(service_id=None, start_seconds=0, end_seconds=20)
+
+    with pytest.raises(VehicleOverlapError) as exc_info:
+        validate_vehicle_schedule(candidate, [existing])
+
+    assert exc_info.value.conflicting_service_id == 1
+
+
+@pytest.mark.parametrize(
+    ("instant", "location"),
+    [(0, "P1A"), (20, "P2A")],
+)
+def test_zero_duration_candidate_touching_an_endpoint_is_allowed(
+    instant: int, location: str,
+) -> None:
+    existing = make_schedule(service_id=1, start_seconds=0, end_seconds=20)
+    candidate = make_schedule(
+        service_id=None, start_location=location, end_location=location,
+        start_seconds=instant, end_seconds=instant,
+    )
+
+    validate_vehicle_schedule(candidate, [existing])
+
+
+def test_zero_duration_candidate_inside_another_vehicles_service_is_allowed() -> None:
+    existing = make_schedule(service_id=1, vehicle_id="V2", start_seconds=0, end_seconds=20)
+    candidate = make_schedule(
+        service_id=None, start_location="P3A", end_location="P3A",
+        start_seconds=10, end_seconds=10,
+    )
+
+    validate_vehicle_schedule(candidate, [existing])

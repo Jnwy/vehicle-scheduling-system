@@ -141,6 +141,27 @@ def occupancies_overlap(
     return first.start_time < second.end_time and second.start_time < first.end_time
 
 
+def vehicle_occupancies_conflict(
+    first: ResourceOccupancy,
+    second: ResourceOccupancy,
+) -> bool:
+    # An empty interval overlaps nothing, but a vehicle cannot run a
+    # zero-duration service at an instant strictly inside another of its
+    # services. Touching an endpoint stays allowed.
+    return (
+        occupancies_overlap(first, second)
+        or _instant_inside(first, second)
+        or _instant_inside(second, first)
+    )
+
+
+def _instant_inside(point: ResourceOccupancy, span: ResourceOccupancy) -> bool:
+    return (
+        point.start_time == point.end_time
+        and span.start_time < point.start_time < span.end_time
+    )
+
+
 def validate_vehicle_schedule(
     candidate: ServiceSchedule,
     existing_services: Iterable[ServiceSchedule],
@@ -228,7 +249,7 @@ def _validate_vehicle_schedule(
     candidate_occupancy = vehicle_occupancy(candidate)
 
     for existing in existing_services:
-        if occupancies_overlap(candidate_occupancy, vehicle_occupancy(existing)):
+        if vehicle_occupancies_conflict(candidate_occupancy, vehicle_occupancy(existing)):
             raise VehicleOverlapError(
                 candidate.service_id,
                 existing.service_id,

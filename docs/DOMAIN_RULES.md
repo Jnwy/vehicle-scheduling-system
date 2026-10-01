@@ -332,6 +332,15 @@ A zero-duration interval `[t, t)` is empty and does not overlap any interval.
 It still participates in ordering and vehicle location continuity when it is a
 service occupancy.
 
+One vehicle rule goes beyond interval overlap: a zero-duration service at
+instant `t` is rejected as a vehicle overlap when `t` lies strictly inside
+another service of the same vehicle (`start < t < end`), in either creation
+order. The vehicle is mid-service at `t`, so it cannot also be elsewhere.
+`t` equal to that service's start or end is allowed and is checked by the
+location continuity rule. Two zero-duration services at the same instant are
+still allowed, and interlocking and block occupancy keep the plain empty
+interval rule.
+
 Example:
 
 ```text
