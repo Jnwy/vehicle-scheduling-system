@@ -515,6 +515,9 @@ The complete rules are in [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md).
 
 - The user supplies the complete path; the system validates it and never
   searches for a route.
+- Stations (`S1`-`S3`) are descriptive groupings only. Platforms of the same
+  station are not directly connected; moving between them requires a path
+  through blocks as defined by the adjacency list.
 - Intervals are `[start, end)`; touching intervals do not conflict.
 - A yard occurrence has zero duration; platform time comes from the service's
   own arrival and departure input.
