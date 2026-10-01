@@ -133,6 +133,28 @@ Do not consider a core domain rule complete without tests.
 
 ---
 
+### 6. Keep routine work low-cost
+
+Use the least expensive workflow that can verify the requested change with
+reasonable confidence.
+
+- Keep exploration and edits narrowly scoped to the current task.
+- Prefer targeted tests, builds, and static checks while iterating.
+- Do not repeatedly run the full Docker stack, complete test suite, browser
+  acceptance flow, or multi-agent review for small changes.
+- Reserve full verification for milestone completion, cross-cutting or risky
+  changes, explicit user requests, and final delivery.
+- Reuse recent valid verification results when the new change cannot affect
+  them, and state what was not rerun.
+- For large tasks, stop at a coherent checkpoint and leave a concise tracked
+  handoff before continuing to another phase.
+
+Low-cost execution must not weaken required domain tests or conceal unverified
+behavior. When confidence and cost conflict, explain the trade-off and choose
+the smallest additional check that resolves the material risk.
+
+---
+
 ## Current Phase
 
 Only work on the phase or task explicitly requested.
