@@ -42,7 +42,7 @@ Last updated: 2026-10-02
 
 Last verified result of the full backend suite: `232 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`187 passed`.
+`189 passed`.
 
 ## How to Verify
 
@@ -152,6 +152,16 @@ index, not a second copy.
   running production stack with a clean console.
 - Not rerun: startup from an empty volume, 390 px width, and saving through
   the browser.
+
+### Stale Service List (2026-10-03, after submission)
+
+- The Block Configuration page lists the services whose snapshot no longer
+  matches the block times, each with a link that opens it in the editor
+  (`/editor?edit=<id>`). Frontend only; the snapshot policy is unchanged.
+- Frontend `189 passed`; production build passed. Browser: the list appeared
+  after a block change, the link opened the service in edit mode with the
+  existing warning, and the list emptied when the block was set back. Backend
+  tests were not rerun because no backend file changed.
 
 ## Known Limitations
 

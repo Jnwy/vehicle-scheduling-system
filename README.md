@@ -72,7 +72,7 @@ The three pages:
   and ordered by time, and playback on the map with vehicle position, battery
   level, and active conflicts.
 - **Block Configuration**: each block's traversal time is edited in place on
-  the map.
+  the map. Services saved with earlier block times are listed below it.
 
 ---
 
@@ -206,12 +206,20 @@ saved timeline interval with the current configuration, including yard-only
 paths and blocks after the last platform. It previews the new times and keeps
 a warning beside Save. Conflicts disable Save; the backend also revalidates
 every update and preserves the original service on rejection. The Schedule
-Viewer does not mark stale services.
+Viewer does not mark stale services; the Block Configuration page lists them
+with a link that opens each one in the editor, so the user updates them one by
+one. Updating one service can move it into the next service of the same
+vehicle, so the list changes as services are fixed.
 
 **Alternative.** Recalculating every affected service inside the block update
 was rejected as unnecessary transaction complexity for this assignment. If
 block changes had to be retroactive, I would add versioned configuration or an
 explicit replanning step.
+
+The next step would be to save block changes as one batch and have the backend
+report, before saving, which services would go stale and which of them would
+conflict once recalculated. Today each block is saved as it is edited, and the
+list names the stale services but leaves the conflict check to the editor.
 
 ### 3. A path starts and ends at a platform or yard
 
@@ -323,8 +331,8 @@ Frontend:
 dc run --rm --no-deps frontend npm test
 ```
 
-Last verified on 2026-10-02: backend **232 passed**,
-frontend **187 passed**.
+Last verified: backend **232 passed** (2026-10-02), frontend **189 passed**
+(2026-10-03).
 
 | Suite | Covers |
 | --- | --- |
