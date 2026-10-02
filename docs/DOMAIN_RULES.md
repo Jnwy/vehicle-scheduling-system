@@ -172,7 +172,8 @@ PLATFORM
 BLOCK
 ```
 
-as long as all consecutive connections exist.
+as long as all consecutive connections exist and the path starts and ends as
+required by Rule 3.9.
 
 ---
 
@@ -181,6 +182,8 @@ as long as all consecutive connections exist.
 A service does not have to start from a yard unless required by the provided topology or service continuity rules.
 
 Starting from a platform may be valid.
+
+Starting from a block is not valid; see Rule 3.9.
 
 ---
 
@@ -191,6 +194,30 @@ Do not reject repeated track elements purely because they appear multiple times.
 A repeated element is allowed if the topology permits the sequence.
 
 Do not introduce loop prevention unless required by the assignment.
+
+---
+
+## Rule 3.9 — A Path Must Start and End at a Platform or Yard
+
+The first and last path elements must each be a `PLATFORM` or `YARD`. A path
+starting or ending on a `BLOCK` is rejected. Blocks are only passed through.
+
+Invalid:
+
+```text
+["P1A", "B3", "B5"]
+["B1", "P1A"]
+```
+
+A vehicle waits at a service's first element before the service and remains
+at its final element until its next service starts. Block occupancy covers
+only the traversal interval, so a vehicle parked on a block would be invisible
+to interlocking validation and block conflict analysis while still physically
+obstructing the track. This is a project decision confirmed on 2026-10-02, not
+a rule stated by the assignment.
+
+The missing-connection check is reported first when both apply, and the start
+of the path is reported before the end.
 
 ---
 

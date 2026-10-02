@@ -2,6 +2,7 @@ import pytest
 
 from app.domain.path_validation import (
     MissingTrackConnectionError,
+    PathEndpointOnBlockError,
     PathTooShortError,
     UnknownTrackElementError,
     validate_path,
@@ -56,7 +57,32 @@ def test_rejects_reverse_direction(topology):
 
 
 def test_accepts_block_to_block_connection(topology):
-    assert validate_path(["B3", "B5"], topology) is None
+    assert validate_path(["P1A", "B3", "B5", "P2A"], topology) is None
+
+
+def test_rejects_path_ending_on_block(topology):
+    with pytest.raises(PathEndpointOnBlockError) as exc_info:
+        validate_path(["P1A", "B3", "B5"], topology)
+
+    assert exc_info.value.element_id == "B5"
+    assert exc_info.value.path_index == 2
+
+
+def test_rejects_path_starting_on_block(topology):
+    with pytest.raises(PathEndpointOnBlockError) as exc_info:
+        validate_path(["B1", "P1A"], topology)
+
+    assert exc_info.value.element_id == "B1"
+    assert exc_info.value.path_index == 0
+
+
+def test_accepts_path_between_yard_and_yard(topology):
+    assert validate_path(["Y", "B1", "Y"], topology) is None
+
+
+def test_reports_missing_connection_before_block_endpoint(topology):
+    with pytest.raises(MissingTrackConnectionError):
+        validate_path(["P1A", "B5"], topology)
 
 
 def test_accepts_mixed_yard_platform_block_path(topology):

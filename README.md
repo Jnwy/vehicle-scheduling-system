@@ -139,7 +139,7 @@ dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:ve
 API tests commit transactions and clear services in the designated test
 database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
-Last verified result: **196 passed**.
+Last verified result: **202 passed**.
 
 Run the frontend unit tests in the frontend container:
 
@@ -148,7 +148,7 @@ dc run --rm --no-deps frontend npm test
 ```
 
 They cover the frontend's pure functions with Vitest and need no browser or
-backend. Last verified result: **66 passed**.
+backend. Last verified result: **117 passed**.
 
 ---
 
@@ -175,7 +175,7 @@ treated as mandatory, not as a Bonus.
 | Bonus | Status | What is included |
 | --- | --- | --- |
 | 1 — Conflict Detection | Implemented | `GET /schedule-analysis` reports cross-vehicle block occupancy, low battery, and insufficient charge on yard departure. These are warnings and do not reject writes. |
-| 2 — Interactive Track Map | Implemented | A d3 SVG map of the topology. The Schedule Editor builds a path by clicking elements, enabling only legal next elements. The Schedule Viewer plays the schedule back with vehicle positions, battery state, and conflict highlighting. |
+| 2 — Interactive Track Map | Implemented | A d3 SVG map of the topology. The Schedule Editor builds a path by clicking the next platform or yard, enabling only reachable stops and adding the blocks on the way. The Schedule Viewer plays the schedule back with vehicle positions, battery state, and conflict highlighting. |
 | 3 — Auto-Generate Schedule | Not implemented | — |
 
 ---
@@ -344,6 +344,64 @@ The user must provide a valid route rather than selecting only an origin and des
 ### When I Would Change It
 
 If route selection became part of the product requirements, route finding could be added as a separate component without changing the scheduling model.
+
+---
+
+## Services Start and End at a Platform or Yard
+
+### Decision
+
+The first and last element of a service path must be a `PLATFORM` or `YARD`.
+A path that starts or ends on a `BLOCK` is rejected with 422
+(`PathEndpointOnBlockError`). Blocks are only passed through.
+
+The assignment does not state this rule; it is a project decision.
+
+### Why
+
+A block is a section of running track, not a place to stop. Between services a
+vehicle stays where its last service ended, but a block is only occupied for
+its traversal interval. A vehicle left on a block would therefore hold no
+resource: another vehicle could be scheduled through the same block or
+interlocking group with no rejection and no reported conflict, although in
+reality the track is obstructed. Requiring a stop at both ends keeps every
+waiting vehicle at a place where waiting is physically reasonable.
+
+### Trade-off
+
+Some paths the adjacency list permits are no longer accepted, such as a
+service that ends halfway along a line. A journey must be entered as a whole
+stop-to-stop run, so it cannot be split into two services at a block.
+
+The rule also narrows which general block conflicts can occur. Every route
+into an ungrouped block first crosses an interlocking group, so with uniform
+traversal times two vehicles are rejected for interlocking before they can
+share an ungrouped block. The Bonus block report still applies when traversal
+times differ.
+
+Because every route between two neighbouring stops is unique in this topology,
+the Schedule Editor lets the user click the next platform or yard and adds the
+blocks on the way. This is an editor convenience, not route finding: the API
+still receives and validates the complete path, and if a stop could be reached
+more than one way the editor falls back to offering single elements. It does
+not offer entering a block only to reverse back to the same stop, although the
+API accepts such a path.
+
+Services saved before the rule are left untouched, but are rejected the next
+time they are updated if they start or end on a block.
+
+### Alternative Considered
+
+Treating a parked vehicle as occupying its block until its next service would
+keep such paths valid. I rejected it because the last service of a vehicle has
+no end to that occupancy, and it would turn idle time into a mandatory
+interlocking constraint that the assignment does not describe.
+
+### When I Would Change It
+
+If the railway had sidings or signals where a vehicle may legitimately hold on
+running track, those would be modeled as their own stopping element type
+rather than by allowing a service to end on a block.
 
 ---
 
@@ -626,6 +684,7 @@ The complete rules are in [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md).
 
 - The user supplies the complete path; the system validates it and never
   searches for a route.
+- A path starts and ends at a platform or yard; blocks are only passed through.
 - Stations (`S1`-`S3`) are descriptive groupings only. Platforms of the same
   station are not directly connected; moving between them requires a path
   through blocks as defined by the adjacency list.
@@ -657,6 +716,7 @@ The test suite covers path validation, including:
 - reverse-direction connection
 - valid block-to-block connection
 - mixed yard/platform/block path
+- path starting or ending on a block
 
 It also covers:
 
@@ -676,6 +736,7 @@ The frontend keeps its calculations in pure functions, tested with Vitest:
 
 - platform timing derivation from start time, block times, and dwell
 - detection of a saved timeline that is stale after a block change
+- the next stops the editor offers and the blocks a click adds
 - playback position, battery interpolation, and active conflicts at an instant
 - Schedule Viewer grouping, time ordering, and time-axis placement
 - datetime and API error formatting

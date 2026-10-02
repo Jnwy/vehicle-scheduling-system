@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from app.domain.models import RailwayTopology
+from app.domain.models import RailwayTopology, TrackElementType
 
 
 class PathValidationError(ValueError):
@@ -34,6 +34,16 @@ class MissingTrackConnectionError(PathValidationError):
         )
 
 
+class PathEndpointOnBlockError(PathValidationError):
+    def __init__(self, element_id: str, path_index: int) -> None:
+        self.element_id = element_id
+        self.path_index = path_index
+        super().__init__(
+            "A service path must start and end at a platform or yard; "
+            f"'{element_id}' at path index {path_index} is a block."
+        )
+
+
 def validate_path(
     path: Sequence[str],
     topology: RailwayTopology,
@@ -51,3 +61,11 @@ def validate_path(
                 from_element_id=from_element_id,
                 to_element_id=to_element_id,
             )
+
+    # A vehicle waits at a service's first and last element outside the
+    # service, but block occupancy only covers traversal, so a vehicle parked
+    # on a block would be invisible to block and interlocking checks.
+    for path_index in (0, len(path) - 1):
+        element_id = path[path_index]
+        if topology.elements[element_id].element_type is TrackElementType.BLOCK:
+            raise PathEndpointOnBlockError(element_id, path_index)

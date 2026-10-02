@@ -33,11 +33,13 @@ def client():
         session.execute(delete(ServiceRecord))
 
 
-def payload(path=("Y", "B1", "P1A"), start=0, vehicle="V1", traversal=10, offset=""):
+def payload(path=("Y", "B1", "P1A"), start=0, vehicle="V1", traversal=10, offset="", instant_blocks=()):
     current = datetime(2026, 10, 1, 8) + timedelta(seconds=start)
     start_time = current.isoformat() + offset
     timings = []
     for index, element in enumerate(path):
+        if element in instant_blocks:
+            continue
         if element.startswith("B"):
             current += timedelta(seconds=traversal)
         elif element.startswith("P"):
@@ -51,6 +53,18 @@ def create(client, **kwargs):
     response = client.post("/services", json=payload(**kwargs))
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def create_two_services_sharing_b5(client):
+    # Every route between two stops reaches ungrouped B5 through B3 or B4,
+    # which share an interlocking group. Zero traversal leaves those group
+    # intervals empty, so the two vehicles overlap on B5 alone.
+    with SessionFactory.begin() as session:
+        for block_id in ("B3", "B4"):
+            session.get(TrackElementRecord, block_id).traversal_seconds = 0
+    first = create(client, path=("P1A", "B3", "B5", "P2A"), instant_blocks=("B3", "B4"))
+    second = create(client, path=("P1B", "B4", "B5", "P2A"), vehicle="V2", instant_blocks=("B3", "B4"))
+    return first, second
 
 
 @pytest.mark.parametrize("origin", ["http://localhost:4200", "http://127.0.0.1:4200"])
@@ -148,33 +162,32 @@ def test_empty_schedule_analysis_includes_seeded_vehicles(client):
 def test_schedule_analysis_reports_cross_vehicle_block_conflict(client):
     # B5 is outside every interlocking group, so the write is accepted and the
     # Bonus analysis reports the shared block instead.
-    first = create(client, path=("B5", "P2A"))
-    second = create(client, path=("B5", "P2A"), vehicle="V2")
+    first, second = create_two_services_sharing_b5(client)
 
     response = client.get("/schedule-analysis")
 
     assert response.status_code == 200
     analysis = response.json()
     assert analysis["startTime"] == "2026-10-01T08:00:00+08:00"
-    assert analysis["endTime"] == "2026-10-01T08:00:20+08:00"
+    assert analysis["endTime"] == "2026-10-01T08:00:30+08:00"
     assert [vehicle["vehicleId"] for vehicle in analysis["vehicles"]] == ["V1", "V2"]
-    assert analysis["vehicles"][0]["segments"][0] == {
+    assert analysis["vehicles"][0]["segments"][2] == {
         "segmentType": "SERVICE",
         "serviceId": first["id"],
-        "pathIndex": 0,
+        "pathIndex": 2,
         "elementId": "B5",
-        "startTime": "2026-10-01T08:00:00+08:00",
-        "endTime": "2026-10-01T08:00:10+08:00",
-        "batteryStart": 80.0,
-        "batteryEnd": 79.0,
+        "startTime": "2026-10-01T08:00:10+08:00",
+        "endTime": "2026-10-01T08:00:20+08:00",
+        "batteryStart": 79.0,
+        "batteryEnd": 78.0,
     }
     assert analysis["vehicles"][1]["segments"][0]["serviceId"] == second["id"]
     assert analysis["conflicts"] == [
         {
             "conflictType": "BLOCK_OCCUPANCY",
             "resourceId": "B5",
-            "startTime": "2026-10-01T08:00:00+08:00",
-            "endTime": "2026-10-01T08:00:10+08:00",
+            "startTime": "2026-10-01T08:00:10+08:00",
+            "endTime": "2026-10-01T08:00:20+08:00",
             "vehicleIds": ["V1", "V2"],
             "serviceIds": [first["id"], second["id"]],
             "elementIds": ["B5"],
@@ -210,6 +223,8 @@ def test_missing_url_resources(client, method, url, body):
     ({"path": ["Y"]}, "PathTooShortError"),
     ({"path": ["Y", "UNKNOWN"]}, "UnknownTrackElementError"),
     ({"path": ["Y", "P1A"]}, "MissingTrackConnectionError"),
+    ({"path": ["Y", "B1"], "platformTimings": []}, "PathEndpointOnBlockError"),
+    ({"path": ["B1", "Y"], "platformTimings": []}, "PathEndpointOnBlockError"),
     ({"platformTimings": []}, "PlatformTimingError"),
 ])
 def test_invalid_service_domain_errors(client, change, code):
@@ -332,23 +347,23 @@ def test_interlocking_update_rolls_back_and_touching_boundary_succeeds(client):
     assert response.json()["startTime"] == first["timeline"][-1]["endTime"]
 
 
-@pytest.mark.parametrize("path", [("B3", "B5"), ("B5", "P2A")])
+@pytest.mark.parametrize("path", [("P1A", "B3", "B5", "P2A"), ("P2A", "B6", "B7", "P3A")])
 def test_interlocking_allows_other_groups_and_ungrouped_blocks(client, path):
     create(client, path=("Y", "B1", "Y"))
     assert create(client, path=path, vehicle="V2")["id"]
 
 
 def test_cross_vehicle_ungrouped_block_occupancy_does_not_reject_write(client):
-    first = create(client, path=("B5", "P2A"))
-    second = create(client, path=("B5", "P2A"), vehicle="V2")
-    assert second["timeline"] == first["timeline"]
+    first, second = create_two_services_sharing_b5(client)
+    assert second["timeline"][2] == first["timeline"][2]
+    assert first["timeline"][2]["elementId"] == "B5"
     assert len(client.get("/services").json()) == 2
 
 
 def bridge(client):
     first = create(client)
     middle = create(client, path=("P1A", "B3", "B5", "P2A"), start=30)
-    last = create(client, path=("P2A", "B6"), start=80)
+    last = create(client, path=("P2A", "B6", "B7", "P3A"), start=80)
     return first, middle, last
 
 
@@ -372,7 +387,7 @@ def test_continuous_middle_delete_and_other_vehicle_independence(client):
     first = create(client, path=("Y", "B1", "Y"))
     middle = create(client, path=("Y", "B1", "Y"), start=30)
     last = create(client, path=("Y", "B1", "Y"), start=60)
-    create(client, vehicle="V2", path=("P1B", "B2"))
+    create(client, vehicle="V2", path=("P1B", "B2", "Y"))
     assert client.delete(f'/services/{middle["id"]}').status_code == 204
     assert client.get(f'/services/{first["id"]}').status_code == 200
     assert client.get(f'/services/{last["id"]}').status_code == 200
