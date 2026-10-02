@@ -530,37 +530,106 @@ select:focus {
   gap: 6px;
 }
 
+/* The start time reads as one timestamp literal; each part is its own dropdown. */
 .start-parts {
-  display: grid;
-  grid-template-columns: 1.4fr repeat(5, 1fr);
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid #bcc9d6;
+  border-radius: 6px;
+  background: #f4f7fa;
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-.start-parts label {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
+.start-parts:focus-within {
+  border-color: #235f7a;
+  outline: 3px solid #d6edf3;
 }
 
-.start-parts input {
-  width: 100%;
-  min-width: 0;
+.start-parts select {
+  width: auto;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #235f7a;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  appearance: none;
+  cursor: pointer;
+}
+
+.start-parts select:hover,
+.start-parts select:focus {
+  outline: none;
+  background: #dce8ef;
+}
+
+.start-parts option {
+  background: #ffffff;
+  color: #17202a;
+  font-weight: 500;
+}
+
+.start-parts option:disabled {
+  background: #eceff3;
+  color: #b3bcc6;
+}
+
+.start-separator {
+  padding: 0 2px;
+  color: #9aa8b5;
+  font-weight: 500;
 }
 
 .vehicle-slots {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .slot {
   display: grid;
-  grid-template-columns: minmax(200px, 1fr) minmax(200px, 1.2fr) 64px;
+  grid-template-columns: 44px minmax(190px, 1fr) minmax(170px, 1.1fr) 64px;
   gap: 10px;
   align-items: center;
-  padding: 8px 10px;
-  border: 1px solid #b9c7d4;
-  border-radius: 8px;
+  min-height: 36px;
+  padding: 2px 10px;
+  border: 1px solid #d5dee7;
+  border-left: 3px solid #2e8b62;
+  border-radius: 6px;
   background: #fbfcfe;
+  color: #23313f;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-tag {
+  color: #2e8b62;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.slot em {
+  color: #8a6414;
+  font-style: normal;
+}
+
+.slot.busy {
+  border-left-color: #a9b5c1;
+  background: #eceff3;
+  color: #8a96a3;
+}
+
+.slot.busy .slot-tag {
+  color: #8a96a3;
 }
 
 .slot-warning {
@@ -569,12 +638,6 @@ select:focus {
   border-radius: 8px;
   background: #fff8e7;
   color: #72510d;
-}
-
-.slot.busy {
-  border-style: dashed;
-  background: #eceff3;
-  color: #8a96a3;
 }
 
 .timing-row {

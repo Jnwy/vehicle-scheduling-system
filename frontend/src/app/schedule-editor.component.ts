@@ -10,7 +10,7 @@ import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } fr
 import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
 import { TrackMapComponent } from './track-map.component';
 import {
-  StartTimeParts, VehicleBusyWindow, VehicleSlot, composeStartTime, derivePlatformTimings, nextStartTime,
+  BusyTimeOptions, StartTimeParts, VehicleBusyWindow, VehicleSlot, busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextStartTime,
   savedTimingsAreStale, splitStartTime, taipeiLocal, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
   vehicleSlots,
 } from './service-timing';
@@ -68,14 +68,63 @@ export class ScheduleEditorComponent implements OnInit {
 
   serviceForm: ServiceForm = this.createEmptyForm();
   startParts: StartTimeParts = splitStartTime(this.serviceForm.startTime);
-  readonly startPartFields: { key: keyof StartTimeParts; label: string; min: number; max: number }[] = [
-    { key: 'year', label: 'Year', min: 1000, max: 9999 },
-    { key: 'month', label: 'Month', min: 1, max: 12 },
-    { key: 'day', label: 'Day', min: 1, max: 31 },
-    { key: 'hour', label: 'Hour', min: 0, max: 23 },
-    { key: 'minute', label: 'Minute', min: 0, max: 59 },
-    { key: 'second', label: 'Second', min: 0, max: 59 },
+  // Rendered as one ISO-like timestamp: 2026 - 10 - 02  12 : 26 : 40.
+  readonly startFields: { key: keyof StartTimeParts; label: string; separator: string }[] = [
+    { key: 'year', label: 'Year', separator: '' },
+    { key: 'month', label: 'Month', separator: '-' },
+    { key: 'day', label: 'Day', separator: '-' },
+    { key: 'hour', label: 'Hour', separator: '·' },
+    { key: 'minute', label: 'Minute', separator: ':' },
+    { key: 'second', label: 'Second', separator: ':' },
   ];
+  private readonly currentYear = new Date().getFullYear();
+  private readonly startValues = {
+    year: Array.from({ length: 7 }, (_, index) => this.currentYear - 1 + index),
+    month: Array.from({ length: 12 }, (_, index) => index + 1),
+    day: Array.from({ length: 31 }, (_, index) => index + 1),
+    hour: Array.from({ length: 24 }, (_, index) => index),
+    minute: Array.from({ length: 60 }, (_, index) => index),
+    second: Array.from({ length: 60 }, (_, index) => index),
+  };
+
+  startFieldValues(key: keyof StartTimeParts): number[] {
+    const { year, month } = this.startParts;
+    if (key === 'day') {
+      return this.startValues.day.slice(0, daysInMonth(year, month));
+    }
+    // A saved service may lie outside the offered years; keep its year selectable.
+    if (key === 'year' && year !== null && !this.startValues.year.includes(year)) {
+      return [...this.startValues.year, year].sort((a, b) => a - b);
+    }
+    return this.startValues[key];
+  }
+
+  isBusyOption(key: keyof StartTimeParts, value: number): boolean {
+    return (key === 'hour' || key === 'minute' || key === 'second') && this.busyTimeOptions[key][value];
+  }
+  private busyTimeOptionsKey = '';
+  private busyTimeOptionsValue: BusyTimeOptions = busyTimeOptions([], '', null, null);
+
+  get startDate(): string {
+    const { year, month, day } = this.startParts;
+    if (year === null || month === null || day === null) {
+      return '';
+    }
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${year}-${pad(month)}-${pad(day)}`;
+  }
+
+  // Read once per option on every change detection, so it is recomputed only when its inputs change.
+  get busyTimeOptions(): BusyTimeOptions {
+    const { hour, minute } = this.startParts;
+    const windows = this.busyWindows;
+    const key = [this.startDate, hour, minute, ...windows.map((window) => `${window.start}-${window.end}`)].join('|');
+    if (key !== this.busyTimeOptionsKey) {
+      this.busyTimeOptionsKey = key;
+      this.busyTimeOptionsValue = busyTimeOptions(windows, this.startDate, hour, minute);
+    }
+    return this.busyTimeOptionsValue;
+  }
 
   // The service being edited is left out: it is the one being rescheduled.
   private get busyWindows(): VehicleBusyWindow[] {
@@ -190,6 +239,11 @@ export class ScheduleEditorComponent implements OnInit {
 
   onStartPartChange(key: keyof StartTimeParts, value: number | null): void {
     this.startParts[key] = value;
+    // Moving from the 31st to a shorter month lands on that month's last day.
+    const { year, month, day } = this.startParts;
+    if (day !== null) {
+      this.startParts.day = Math.min(day, daysInMonth(year, month));
+    }
     this.serviceForm.startTime = composeStartTime(this.startParts);
     // Follow the vehicle only while no path has been built, so typing a time never discards one.
     if (this.editingServiceId() === null && this.pathSelection().length <= 1) {
@@ -235,12 +289,6 @@ export class ScheduleEditorComponent implements OnInit {
 
   choosePathStart(): void {
     this.setPathSelection([]);
-  }
-
-  onPathTextChange(value: string): void {
-    this.serviceForm.pathText = value;
-    this.pathSelection.set(this.parsePathText());
-    this.fillPlatformRowsFromPath();
   }
 
   submitService(): void {

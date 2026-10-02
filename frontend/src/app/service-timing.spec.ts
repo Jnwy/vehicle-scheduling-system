@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TrackElementResponse } from './models';
 import {
-  composeStartTime, derivePlatformTimings, nextStartTime, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
+  busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextStartTime, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
   vehicleContinuation, vehiclePositionAt, vehicleSlots,
 } from './service-timing';
 
@@ -58,6 +58,14 @@ describe('start time parts', () => {
     const parts = splitStartTime('2026-10-03T08:05:09');
     expect(parts).toEqual({ year: 2026, month: 10, day: 3, hour: 8, minute: 5, second: 9 });
     expect(composeStartTime(parts)).toBe('2026-10-03T08:05:09');
+  });
+
+  it('knows month lengths, including leap years', () => {
+    expect(daysInMonth(2026, 2)).toBe(28);
+    expect(daysInMonth(2028, 2)).toBe(29);
+    expect(daysInMonth(2026, 4)).toBe(30);
+    expect(daysInMonth(2026, 12)).toBe(31);
+    expect(daysInMonth(null, 2)).toBe(31);
   });
 
   it('defaults missing seconds to zero', () => {
@@ -121,6 +129,29 @@ describe('vehicle availability', () => {
     const backToBack = [services[1], service(4, 'V1', '08:05:00', '08:20:00', ['P1A', 'B3', 'P2A'])];
     expect(vehicleSlots(vehicleBusyWindows(backToBack, 'V1')).map((slot) => slot.kind))
       .toEqual(['free', 'busy', 'busy', 'free']);
+  });
+
+  it('disables only the hours, minutes, and seconds that are busy throughout', () => {
+    const windows = vehicleBusyWindows([
+      service(5, 'V1', '08:00:30', '10:02:10', ['Y', 'B1']),
+      service(6, 'V1', '10:02:10', '10:02:20', ['B1', 'B3']),
+    ], 'V1');
+    const busy = (options: boolean[]) => options.flatMap((value, index) => (value ? [index] : []));
+
+    const at1002 = busyTimeOptions(windows, '2026-10-03', 10, 2);
+    // 08:00:00-08:00:29 and 10:02:20 onwards are still free, so only 09 is fully busy.
+    expect(busy(at1002.hour)).toEqual([9]);
+    expect(busy(at1002.minute)).toEqual([0, 1]);
+    // Back-to-back services merge; the end instant 10:02:20 itself is free.
+    expect(busy(at1002.second)).toEqual(Array.from({ length: 20 }, (_, index) => index));
+
+    expect(busy(busyTimeOptions(windows, '2026-10-03', 8, 0).second)).toEqual(
+      Array.from({ length: 30 }, (_, index) => index + 30),
+    );
+    const otherDay = busyTimeOptions(windows, '2026-10-04', 9, 0);
+    expect([...otherDay.hour, ...otherDay.minute, ...otherDay.second]).not.toContain(true);
+    const noDate = busyTimeOptions(windows, '', null, null);
+    expect([...noDate.hour, ...noDate.minute, ...noDate.second]).not.toContain(true);
   });
 
   it('reports the vehicle position using [start, end) windows', () => {

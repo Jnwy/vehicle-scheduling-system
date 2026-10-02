@@ -78,20 +78,24 @@
             <div class="start-time">
               <span>Start time (Taipei)</span>
               <div class="start-parts">
-                @for (field of startPartFields; track field.key) {
-                  <label>
-                    <small>{{ field.label }}</small>
-                    <input
-                      type="number"
-                      step="1"
-                      required
-                      [name]="'start-' + field.key"
-                      [min]="field.min"
-                      [max]="field.max"
-                      [ngModel]="startParts[field.key]"
-                      (ngModelChange)="onStartPartChange(field.key, $event)"
-                      />
-                  </label>
+                <!-- One timestamp, one dropdown per part. Options the vehicle is busy for throughout are disabled. -->
+                @for (field of startFields; track field.key) {
+                  @if (field.separator) {
+                    <span class="start-separator" aria-hidden="true">{{ field.separator }}</span>
+                  }
+                  <select
+                    required
+                    [name]="'start-' + field.key"
+                    [attr.aria-label]="field.label"
+                    [ngModel]="startParts[field.key]"
+                    (ngModelChange)="onStartPartChange(field.key, $event)"
+                    >
+                    @for (value of startFieldValues(field.key); track value) {
+                      <option [ngValue]="value" [disabled]="isBusyOption(field.key, value)">
+                        {{ value < 10 ? '0' + value : value }}
+                      </option>
+                    }
+                  </select>
                 }
               </div>
             </div>
@@ -110,24 +114,26 @@
               @for (slot of vehicleSlots; track $index) {
                 @if (slot.kind === 'busy') {
                   <div class="slot busy">
-                    <span>{{ slotTime(slot.start!) }} to {{ slotTime(slot.end!) }}</span>
-                    <span>In use by service #{{ slot.serviceId }} ({{ slot.elementId }} -> {{ slot.nextElementId }})</span>
+                    <span class="slot-tag">BUSY</span>
+                    <span>{{ slotTime(slot.start!) }} → {{ slotTime(slot.end!) }}</span>
+                    <span>service #{{ slot.serviceId }} · {{ slot.elementId }} -> {{ slot.nextElementId }}</span>
                   </div>
                 } @else {
                   <div class="slot free">
+                    <span class="slot-tag">FREE</span>
                     <span>
                       @if (slot.start === null && slot.end === null) {
-                        Any time
+                        any time
                       } @else if (slot.start === null) {
-                        Before {{ slotTime(slot.end!) }}
+                        … → {{ slotTime(slot.end!) }}
                       } @else if (slot.end === null) {
-                        From {{ slotTime(slot.start) }}
+                        {{ slotTime(slot.start) }} → …
                       } @else {
-                        {{ slotTime(slot.start) }} to {{ slotTime(slot.end) }}
+                        {{ slotTime(slot.start) }} → {{ slotTime(slot.end) }}
                       }
                     </span>
                     <span>
-                      Free, starts at {{ slot.elementId ?? 'Y' }}@if (slot.nextElementId) {, must end at {{ slot.nextElementId }}}
+                      starts at <strong>{{ slot.elementId ?? 'Y' }}</strong>@if (slot.nextElementId) {<em> · must end at {{ slot.nextElementId }}</em>}
                     </span>
                     @if (slot.start !== null) {
                       <button type="button" class="secondary small" (click)="useFreeSlot(slot)">Use</button>
@@ -137,18 +143,6 @@
               }
             </div>
           }
-
-          <label>
-            Ordered path
-            <input
-              name="pathText"
-              type="text"
-              required
-              [ngModel]="serviceForm.pathText"
-              (ngModelChange)="onPathTextChange($event)"
-              placeholder="Y, B1, P1A"
-              />
-          </label>
 
           <div class="timing-header">
             <h3>Platform timings</h3>

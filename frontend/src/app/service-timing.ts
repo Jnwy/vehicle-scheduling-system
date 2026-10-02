@@ -50,6 +50,14 @@ export function splitStartTime(value: string): StartTimeParts {
   return { year, month, day, hour, minute, second };
 }
 
+export function daysInMonth(year: number | null, month: number | null): number {
+  if (year === null || month === null) {
+    return 31;
+  }
+  // Day 0 of the following month is the last day of this one.
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
 // Returns '' unless the parts form a real calendar date and time, so that
 // 30 February or hour 24 is reported instead of silently rolling over.
 export function composeStartTime(parts: StartTimeParts): string {
@@ -164,6 +172,43 @@ export function vehiclePositionAt(
     }
   }
   return { busy: null, elementId: latest?.endElementId ?? null };
+}
+
+export interface BusyTimeOptions {
+  hour: boolean[];
+  minute: boolean[];
+  second: boolean[];
+}
+
+// Which hour, minute, and second choices on a Taipei date cannot be a start
+// time. An hour or minute is unavailable only when every second in it is busy.
+export function busyTimeOptions(
+  windows: VehicleBusyWindow[],
+  date: string,
+  hour: number | null,
+  minute: number | null,
+): BusyTimeOptions {
+  const dayStart = Date.parse(`${date}T00:00:00+08:00`);
+  // Start times are whole seconds; windows are sorted by start.
+  const fullyBusy = (from: number, length: number): boolean => {
+    let cursor = from;
+    for (const window of windows) {
+      if (window.start <= cursor && cursor < window.end) {
+        cursor = window.end;
+      }
+    }
+    return cursor > from + length - 1000;
+  };
+  const options = (count: number, base: number | null, step: number): boolean[] =>
+    Array.from({ length: count }, (_, index) =>
+      base !== null && Number.isFinite(base) && fullyBusy(base + index * step, step));
+  const hourStart = hour === null ? null : dayStart + hour * 3600000;
+  const minuteStart = hourStart === null || minute === null ? null : hourStart + minute * 60000;
+  return {
+    hour: options(24, dayStart, 3600000),
+    minute: options(60, hourStart, 60000),
+    second: options(60, minuteStart, 1000),
+  };
 }
 
 // Wall-clock Taipei time for the start fields, rounded up to a whole second
