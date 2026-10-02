@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TopologyResponse, TrackElementResponse } from './models';
 import {
-  ScheduleWindow, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart, interlockingConflicts,
-  pathEndpointProblems,
+  ScheduleWindow, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart, nextStepTimelines,
+  pathEndpointProblems, trackConflicts,
   savedWindow,
   vehicleProblems,
 } from './service-conflicts';
@@ -53,21 +53,33 @@ describe('interlocking previews', () => {
     candidateTimeline(`2026-10-03T${start}`, path, elements, new Map([[0, 0]]))!;
 
   it('reports a different block of the same group held by another vehicle', () => {
-    expect(interlockingConflicts(timelineAt('08:00:40'), 'V2', [v1InGroup], elements, null)).toEqual([{
+    expect(trackConflicts(timelineAt('08:00:40'), 'V2', [v1InGroup], elements, null)).toEqual([{
       pathIndex: 1, elementId: 'B4', group: 'IG1', serviceId: 1, vehicleId: 'V1',
       start: at('08:00:30'), end: at('08:00:50'),
     }]);
   });
 
   it('allows touching intervals, other groups, ungrouped blocks, and the same vehicle', () => {
-    expect(interlockingConflicts(timelineAt('08:00:50'), 'V2', [v1InGroup], elements, null)).toEqual([]);
-    expect(interlockingConflicts(timelineAt('08:00:10'), 'V2', [v1InGroup], elements, null)).toEqual([]);
-    expect(interlockingConflicts(timelineAt('08:00:40', ['P1A', 'B1']), 'V2', [v1InGroup], elements, null)).toEqual([]);
-    expect(interlockingConflicts(timelineAt('08:00:40'), 'V1', [v1InGroup], elements, null)).toEqual([]);
+    expect(trackConflicts(timelineAt('08:00:50'), 'V2', [v1InGroup], elements, null)).toEqual([]);
+    expect(trackConflicts(timelineAt('08:00:10'), 'V2', [v1InGroup], elements, null)).toEqual([]);
+    expect(trackConflicts(timelineAt('08:00:40', ['P1A', 'B1']), 'V2', [v1InGroup], elements, null)).toEqual([]);
+    expect(trackConflicts(timelineAt('08:00:40'), 'V1', [v1InGroup], elements, null)).toEqual([]);
   });
 
   it('ignores the service being replaced by an update', () => {
-    expect(interlockingConflicts(timelineAt('08:00:40'), 'V2', [v1InGroup], elements, 1)).toEqual([]);
+    expect(trackConflicts(timelineAt('08:00:40'), 'V2', [v1InGroup], elements, 1)).toEqual([]);
+  });
+
+  it('reports an ungrouped block another vehicle occupies, with no group', () => {
+    const v1OnB1 = saved(3, 'V1', [['B1', '08:00:30', '08:00:50']]);
+    expect(trackConflicts(timelineAt('08:00:40', ['P1A', 'B1']), 'V2', [v1OnB1], elements, null)).toEqual([{
+      pathIndex: 1, elementId: 'B1', group: null, serviceId: 3, vehicleId: 'V1',
+      start: at('08:00:30'), end: at('08:00:50'),
+    }]);
+    // Touching the occupancy, and standing at the same platform, are allowed.
+    expect(trackConflicts(timelineAt('08:00:50', ['P1A', 'B1']), 'V2', [v1OnB1], elements, null)).toEqual([]);
+    const v1AtP1A = saved(4, 'V1', [['P1A', '08:00:00', '08:02:00']]);
+    expect(trackConflicts(timelineAt('08:00:40', ['P1A', 'B1']), 'V2', [v1AtP1A], elements, null)).toEqual([]);
   });
 
   // Y -> B1 -> P1A, then P1A -> B3 -> B5 -> P2A or P1A -> B4 -> P2B; B3 and B4 share IG1.
@@ -104,6 +116,22 @@ describe('interlocking previews', () => {
     expect([...blocked.keys()]).toEqual(['P2A']);
     expect(blocked.get('P2A')).toMatchObject({ pathIndex: 2, elementId: 'B5', group: 'IG2' });
     expect(blockedNextElements(['P1A'], at('08:00:20'), 'V2', [v1InB5], stops, null).size).toBe(0);
+  });
+
+  it('blocks a next stop when an ungrouped block on the way is occupied', () => {
+    const v1OnB1 = saved(3, 'V1', [['B1', '08:00:30', '08:00:50']]);
+    const blocked = blockedNextElements(['Y'], at('08:00:40'), 'V2', [v1OnB1], stops, null);
+    expect(blocked.get('P1A')).toMatchObject({ elementId: 'B1', group: null, serviceId: 3 });
+  });
+
+  it('times the steps each next click would add, with no time at the stop', () => {
+    const timelines = nextStepTimelines(['Y', 'B1', 'P1A'], at('08:01:00'), stops);
+    expect(timelines.get('P2A')).toEqual([
+      { pathIndex: 3, elementId: 'B3', start: at('08:01:00'), end: at('08:01:20') },
+      { pathIndex: 4, elementId: 'B5', start: at('08:01:20'), end: at('08:01:40') },
+      { pathIndex: 5, elementId: 'P2A', start: at('08:01:40'), end: at('08:01:40') },
+    ]);
+    expect([...timelines.keys()]).toEqual(['P2A', 'P2B']);
   });
 
   it('blocks no starting element, because a path starts at a stop', () => {

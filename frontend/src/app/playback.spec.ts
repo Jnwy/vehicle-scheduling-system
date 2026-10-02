@@ -65,7 +65,8 @@ describe('vehicleStatesAt', () => {
 
     expect(state).toEqual({
       vehicleId: 'V1', serviceId: 1, elementId: 'B1',
-      fromElementId: 'Y', toElementId: 'B1', progress: 0.5, battery: 79.75,
+      fromElementId: 'Y', toElementId: 'B1', progress: 0.5,
+      headingFromElementId: 'Y', headingToElementId: 'B1', battery: 79.75, charging: false,
     });
   });
 
@@ -74,7 +75,8 @@ describe('vehicleStatesAt', () => {
 
     expect(state).toEqual({
       vehicleId: 'V1', serviceId: 1, elementId: 'B1',
-      fromElementId: 'B1', toElementId: 'P1A', progress: 0.5, battery: 79.25,
+      fromElementId: 'B1', toElementId: 'P1A', progress: 0.5,
+      headingFromElementId: 'B1', headingToElementId: 'P1A', battery: 79.25, charging: false,
     });
   });
 
@@ -82,6 +84,12 @@ describe('vehicleStatesAt', () => {
     const [state] = vehicleStatesAt(analysis(), topology, ms(0));
 
     expect(state).toMatchObject({ elementId: 'B1', fromElementId: 'Y', progress: 0 });
+  });
+
+  it('keeps the arrival direction while standing on a platform', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(30));
+
+    expect(state).toMatchObject({ headingFromElementId: 'B1', headingToElementId: 'P1A' });
   });
 
   it('keeps a vehicle still on a platform', () => {

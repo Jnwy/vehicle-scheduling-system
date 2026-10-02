@@ -26,15 +26,37 @@
   </div>
 
   <div class="service-setup">
-    <label>
-      Vehicle
-      <select name="vehicleId" required [disabled]="isBusy()" [ngModel]="serviceForm.vehicleId" (ngModelChange)="onVehicleChange($event)">
-        <option value="" disabled>Select vehicle</option>
+    <div class="vehicle-picker">
+      <span id="vehicle-picker-label">Vehicle</span>
+      <!-- Each vehicle is drawn in the colour it has on the map. -->
+      <div class="vehicle-options" role="radiogroup" aria-labelledby="vehicle-picker-label">
         @for (vehicle of vehicles(); track vehicle.id) {
-          <option [value]="vehicle.id">{{ vehicle.id }}</option>
+          <button
+            type="button"
+            role="radio"
+            class="vehicle-option"
+            [class.selected]="vehicle.id === serviceForm.vehicleId"
+            [attr.aria-checked]="vehicle.id === serviceForm.vehicleId"
+            [disabled]="isBusy()"
+            [style.--vehicle-color]="vehicleColor(vehicle.id)"
+            (click)="onVehicleChange(vehicle.id)"
+          >
+            <svg viewBox="-20 -13 40 26" width="40" height="26" aria-hidden="true">
+              <rect x="-11.5" y="-10" width="7" height="4" rx="1.5" fill="#141413" />
+              <rect x="4.5" y="-10" width="7" height="4" rx="1.5" fill="#141413" />
+              <rect x="-11.5" y="6" width="7" height="4" rx="1.5" fill="#141413" />
+              <rect x="4.5" y="6" width="7" height="4" rx="1.5" fill="#141413" />
+              <rect x="-15" y="-8" width="30" height="16" rx="4.5" fill="var(--vehicle-color)" stroke="#ffffff" stroke-width="1.5" />
+              <rect x="3" y="-5" width="6" height="10" rx="1.5" fill="#eaf2fb" />
+              <rect x="-11.5" y="-4" width="3" height="8" rx="1" fill="#eaf2fb" opacity="0.7" />
+              <circle cx="12.5" cy="-4.5" r="1.3" fill="#ffd966" />
+              <circle cx="12.5" cy="4.5" r="1.3" fill="#ffd966" />
+            </svg>
+            {{ vehicle.id }}
+          </button>
         }
-      </select>
-    </label>
+      </div>
+    </div>
 
     <div class="start-time">
       <span>Start time (Taipei)</span>
@@ -106,9 +128,6 @@
           </select>
         }
       </div>
-      @if (startMovedNote) {
-        <small class="start-moved" role="status">{{ startMovedNote }}</small>
-      }
     </div>
   </div>
 
@@ -120,44 +139,116 @@
         </span>
       }
     </div>
+  </div>
+
+  @if (mapInstant(); as instant) {
+    @if (mapRange(); as range) {
+      <!-- The bar is the instant the path ends. Dragging it moves the whole service, and its start time, by the same amount. -->
+      <div class="map-timeline">
+        <label class="seek-control">
+          Timeline
+          <input
+            type="range"
+            step="1"
+            [min]="range.start / 1000"
+            [max]="range.end / 1000"
+            [ngModel]="instant / 1000"
+            [ngModelOptions]="{ standalone: true }"
+            [disabled]="isBusy()"
+            (ngModelChange)="moveServiceTo($event)"
+          />
+        </label>
+      </div>
+      <div class="time-axis map-axis" role="img" aria-label="This service on the schedule timeline, with the times it cannot be moved to" (click)="moveServiceFromAxis($event)">
+        @for (bar of unavailableBars(); track $index) {
+          <span class="axis-unavailable" [class.battery]="bar.battery" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
+        }
+        @if (draftBar(); as bar) {
+          <span class="axis-service draft" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" title="This service">This service</span>
+        }
+        <span class="axis-cursor" [style.left.%]="mapCursorPercent()"></span>
+      </div>
+      <p class="map-instant">
+        Drag the timeline to move this service in time; the start time follows.
+        <span class="unavailable-key"></span> Times the path cannot end at, because saving it there would be rejected.
+        <span class="unavailable-key battery"></span> Not enough battery to leave the yard.
+      </p>
+    }
+    <p class="map-instant" role="status">
+      Vehicles are shown where they are at <strong>{{ slotTime(instant) }}</strong>, when this path ends.
+      @if (draftBattery()) {
+        <strong>{{ draftBattery() }}</strong>
+      }
+    </p>
+  }
+
+  <div class="map-stage">
+    <!-- Over the map's empty top corner, so the growing path above never moves them. -->
     <div class="map-actions">
-      <button type="button" class="secondary small" [disabled]="isBusy() || pathSelection().length === 0" (click)="undoPathElement()">Undo</button>
+      <button type="button" class="secondary small with-icon" [disabled]="isBusy() || pathSelection().length === 0" (click)="undoPathElement()">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3 2.5 6.5 6 10" />
+          <path d="M2.5 6.5H9a4 4 0 0 1 0 8H6" />
+        </svg>
+        Undo
+      </button>
       <button type="button" class="secondary small" [disabled]="isBusy()" (click)="resetPathToY()">Reset to Y</button>
       <button type="button" class="secondary small" [disabled]="isBusy()" (click)="choosePathStart()">Change start</button>
     </div>
-  </div>
-
-  @if (blockedNextList().length > 0) {
-    <ul class="map-hints" role="status">
-      @for (entry of blockedNextList(); track entry[0]) {
-        <li><strong>{{ entry[0] }}</strong> is blocked: {{ entry[1] }}</li>
-      }
-    </ul>
-  }
-
   <app-track-map
-    [topology]="topology()"
-    [selectedPath]="pathSelection()"
+      [topology]="topology()"
+      [selectedPath]="pathSelection()"
     [interactive]="!isBusy()"
-    [vehicles]="[]"
+    [vehicles]="mapVehicles()"
+    [focusVehicleId]="serviceForm.vehicleId"
+    [alertVehicleIds]="alertVehicleIds()"
+    [batteryAlertVehicleIds]="batteryAlertVehicleIds()"
     [conflictElementIds]="conflictElementIds()"
     [blockedElements]="blockedNext()"
     mapPurpose="editor"
     (elementSelected)="selectPathElement($event)"
     />
+  </div>
+
+  <!-- A floating panel, so the map and the form keep their place while the timeline is dragged. -->
+  <div class="map-status" role="status" aria-live="polite" [class.collapsed]="statusCollapsed()" [class.rejected]="blockers().length > 0" [class.warned]="blockers().length === 0 && (lowBatteryNotes().length > 0 || blockedNextList().length > 0)">
+    <div class="map-status-header">
+      @if (blockers().length > 0) {
+        <strong>This service would be rejected:</strong>
+      } @else if (lowBatteryNotes().length > 0 || blockedNextList().length > 0) {
+        <strong>This service can be saved. Note:</strong>
+      } @else {
+        <strong>No conflicts at this time.</strong>
+      }
+      <button
+        type="button"
+        class="map-status-toggle"
+        [attr.aria-expanded]="!statusCollapsed()"
+        [attr.aria-label]="statusCollapsed() ? 'Show details' : 'Hide details'"
+        [attr.title]="statusCollapsed() ? 'Show details' : 'Hide details'"
+        (click)="statusCollapsed.set(!statusCollapsed())"
+      >{{ statusCollapsed() ? '+' : '–' }}</button>
+    </div>
+    @if (!statusCollapsed()) {
+      <ul>
+        @if (startMovedNote) {
+          <li class="note">{{ startMovedNote }}</li>
+        }
+        @for (blocker of blockers(); track $index) {
+          <li>{{ blocker }}</li>
+        }
+        @for (note of lowBatteryNotes(); track $index) {
+          <li class="note">{{ note }}</li>
+        }
+        @for (entry of blockedNextList(); track entry[0]) {
+          <li class="note"><strong>{{ entry[0] }}</strong> cannot be the next stop: {{ entry[1] }}</li>
+        }
+      </ul>
+    }
+  </div>
 
   <form class="map-form" (ngSubmit)="submitService()">
     <fieldset class="service-form" [disabled]="isBusy()">
-      @if (blockers().length > 0) {
-        <div class="blockers" role="alert">
-          <strong>This service would be rejected:</strong>
-          <ul>
-            @for (blocker of blockers(); track $index) {
-              <li>{{ blocker }}</li>
-            }
-          </ul>
-        </div>
-      }
 
       @if (serviceForm.vehicleId) {
         <div class="vehicle-slots">
@@ -274,7 +365,7 @@
           <div class="service-summary">
             <div>
               <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
-              <p>{{ formatForDisplay(service.startTime) }} | {{ service.path.join(' -> ') }}</p>
+              <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }}</p>
             </div>
             <div class="service-actions">
               <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
@@ -290,6 +381,17 @@
                 >Delete</button>
             </div>
           </div>
+          <app-service-path-strip [service]="service" [topology]="topology()" />
+          @if (servicePositions().get(service.id); as position) {
+            <div
+              class="service-position"
+              role="img"
+              [attr.aria-label]="'Service #' + service.id + ' runs ' + formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service)) + ' within the schedule'"
+              [attr.title]="formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service))"
+              >
+              <span [style.left.%]="position.leftPercent" [style.width.%]="position.widthPercent"></span>
+            </div>
+          }
           @if (deleteBlockers().get(service.id); as reason) {
             <p class="delete-blocker">Cannot delete: {{ reason }}</p>
           }

@@ -1,3 +1,4 @@
+import { CHARGE_SECONDS_PER_UNIT } from './battery-preview';
 import {
   PlaybackVehicleState,
   ScheduleAnalysis,
@@ -5,6 +6,8 @@ import {
   SimulationSegment,
   TopologyResponse,
 } from './models';
+
+const FULL_BATTERY = 100;
 
 export interface PlaybackRange {
   start: number;
@@ -49,18 +52,44 @@ export function vehicleStatesAt(
           blockIds,
         )
       : { fromElementId: segment.elementId, toElementId: segment.elementId, progress: 0 };
+    const heading = leg.fromElementId !== leg.toElementId
+      ? { headingFromElementId: leg.fromElementId, headingToElementId: leg.toElementId }
+      : standingHeading(vehicle.segments, index);
+    // A block drains evenly over its time. Charging runs at a fixed rate and
+    // stops at the segment's end value, which is where a full battery is capped.
+    const charges = segment.segmentType === 'IDLE' && segment.batteryEnd > segment.batteryStart;
+    const battery = charges
+      ? Math.min(segment.batteryEnd, segment.batteryStart + (instant - start) / 1000 / CHARGE_SECONDS_PER_UNIT)
+      : segment.batteryStart + (segment.batteryEnd - segment.batteryStart) * fraction;
     return [{
       vehicleId: vehicle.vehicleId,
       serviceId: segment.serviceId,
       elementId: segment.elementId,
       ...leg,
-      battery: segment.batteryStart + (segment.batteryEnd - segment.batteryStart) * fraction,
+      ...heading,
+      battery,
+      charging: charges && battery < FULL_BATTERY,
     }];
   });
 }
 
 function neighbourId(neighbour: SimulationSegment | undefined, segment: SimulationSegment): string | null {
   return neighbour && neighbour.elementId !== segment.elementId ? neighbour.elementId : null;
+}
+
+// A standing vehicle keeps the direction it arrived in. Before its first move
+// it faces where it will go next.
+function standingHeading(
+  segments: SimulationSegment[],
+  index: number,
+): Pick<PlaybackVehicleState, 'headingFromElementId' | 'headingToElementId'> {
+  const elementId = segments[index].elementId;
+  const previous = segments.slice(0, index).reverse().find((segment) => segment.elementId !== elementId);
+  if (previous) {
+    return { headingFromElementId: previous.elementId, headingToElementId: elementId };
+  }
+  const next = segments.slice(index + 1).find((segment) => segment.elementId !== elementId);
+  return { headingFromElementId: elementId, headingToElementId: next?.elementId ?? elementId };
 }
 
 // A block's time is spent travelling in from the previous element, through

@@ -1,5 +1,5 @@
-// Live previews of the write validation the backend applies (DOMAIN_RULES 8,
-// 9, 10, 11). They use the same saved timeline snapshots and [start, end)
+// Live previews of the write validation the backend applies (DOMAIN_RULES 7,
+// 8, 9, 10, 11); the battery rules of 8.1 are previewed in battery-preview.ts. They use the same saved timeline snapshots and [start, end)
 // semantics, but the backend stays the authority: these only explain a
 // rejection before the user submits.
 import type { ServiceResponse, TopologyResponse, TrackElementResponse } from './models';
@@ -42,11 +42,15 @@ function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): b
   return aStart !== aEnd && bStart !== bEnd && aStart < bEnd && bStart < aEnd;
 }
 
-export interface InterlockingConflict {
+// A block the candidate cannot enter because another vehicle is in it or in
+// another block of its interlocking group.
+export interface TrackConflict {
   pathIndex: number;
   elementId: string;
-  group: string;
-  // The other vehicle's occupancy of the group that the candidate runs into.
+  // The shared interlocking group, or null when the block itself is occupied
+  // and belongs to no group.
+  group: string | null;
+  // The other vehicle's occupancy that the candidate runs into.
   serviceId: number;
   vehicleId: string;
   start: number;
@@ -55,14 +59,15 @@ export interface InterlockingConflict {
 
 type SavedService = Pick<ServiceResponse, 'id' | 'vehicleId' | 'timeline'>;
 
-function interlockingConflict(
+function trackConflict(
   interval: OccupancyInterval,
   vehicleId: string,
   services: SavedService[],
-  groupByBlock: Map<string, string>,
+  groupByBlock: Map<string, string | null>,
   excludeServiceId: number | null,
-): InterlockingConflict | null {
+): TrackConflict | null {
   const group = groupByBlock.get(interval.elementId);
+  // Only blocks are exclusive; vehicles may share a platform or the yard.
   if (group === undefined) {
     return null;
   }
@@ -74,7 +79,9 @@ function interlockingConflict(
     for (const occupied of service.timeline) {
       const start = Date.parse(occupied.startTime);
       const end = Date.parse(occupied.endTime);
-      if (groupByBlock.get(occupied.elementId) === group && overlaps(interval.start, interval.end, start, end)) {
+      const sameResource = occupied.elementId === interval.elementId
+        || (group !== null && groupByBlock.get(occupied.elementId) === group);
+      if (sameResource && overlaps(interval.start, interval.end, start, end)) {
         return {
           pathIndex: interval.pathIndex, elementId: interval.elementId, group,
           serviceId: service.id, vehicleId: service.vehicleId, start, end,
@@ -85,27 +92,27 @@ function interlockingConflict(
   return null;
 }
 
-function interlockingGroups(elements: TrackElementResponse[]): Map<string, string> {
-  return new Map(elements.flatMap((element) =>
-    element.elementType === 'BLOCK' && element.interlockingGroup
-      ? [[element.id, element.interlockingGroup] as [string, string]]
-      : []));
+// Every block with its interlocking group, or null for a block outside any group.
+function blockGroups(elements: TrackElementResponse[]): Map<string, string | null> {
+  return new Map(elements
+    .filter((element) => element.elementType === 'BLOCK')
+    .map((element) => [element.id, element.interlockingGroup || null]));
 }
 
-// Path elements that would enter an interlocking group while another vehicle holds it.
-export function interlockingConflicts(
+// Path elements that would enter a block, or an interlocking group, while another vehicle holds it.
+export function trackConflicts(
   timeline: OccupancyInterval[],
   vehicleId: string,
   services: SavedService[],
   elements: TrackElementResponse[],
   excludeServiceId: number | null,
-): InterlockingConflict[] {
-  const groupByBlock = interlockingGroups(elements);
+): TrackConflict[] {
+  const groupByBlock = blockGroups(elements);
   return timeline.flatMap((interval) =>
-    interlockingConflict(interval, vehicleId, services, groupByBlock, excludeServiceId) ?? []);
+    trackConflict(interval, vehicleId, services, groupByBlock, excludeServiceId) ?? []);
 }
 
-// The next clicks (see path-steps.ts) that would be rejected for interlocking
+// The next clicks (see path-steps.ts) that would be rejected for a held block
 // if the path continued from the time it currently ends. A stop is blocked by
 // the first held block on the way to it; the conflict names that block.
 export function blockedNextElements(
@@ -115,10 +122,10 @@ export function blockedNextElements(
   services: SavedService[],
   topology: TopologyResponse,
   excludeServiceId: number | null,
-): Map<string, InterlockingConflict> {
-  const groupByBlock = interlockingGroups(topology.elements);
+): Map<string, TrackConflict> {
+  const groupByBlock = blockGroups(topology.elements);
   const byId = new Map(topology.elements.map((element) => [element.id, element]));
-  const blocked = new Map<string, InterlockingConflict>();
+  const blocked = new Map<string, TrackConflict>();
   for (const [elementId, steps] of nextPathSteps(path, topology)) {
     let cursor = pathEnd;
     for (const [offset, stepId] of steps.entries()) {
@@ -130,7 +137,7 @@ export function blockedNextElements(
       const interval = {
         pathIndex: path.length + offset, elementId: stepId, start: cursor, end: cursor + element.traversalSeconds * 1000,
       };
-      const conflict = interlockingConflict(interval, vehicleId, services, groupByBlock, excludeServiceId);
+      const conflict = trackConflict(interval, vehicleId, services, groupByBlock, excludeServiceId);
       if (conflict !== null) {
         blocked.set(elementId, conflict);
         break;
@@ -141,10 +148,39 @@ export function blockedNextElements(
   return blocked;
 }
 
+// The timeline each next click (see path-steps.ts) would add when the path
+// continues from the time it currently ends. The stop itself gets no duration:
+// its dwell is not chosen yet. A route through an unconfigured block is left out.
+export function nextStepTimelines(
+  path: string[],
+  pathEnd: number,
+  topology: TopologyResponse,
+): Map<string, OccupancyInterval[]> {
+  const byId = new Map(topology.elements.map((element) => [element.id, element]));
+  const timelines = new Map<string, OccupancyInterval[]>();
+  for (const [elementId, steps] of nextPathSteps(path, topology)) {
+    let cursor = pathEnd;
+    const intervals: OccupancyInterval[] = [];
+    for (const [offset, stepId] of steps.entries()) {
+      const element = byId.get(stepId);
+      if (element?.elementType === 'BLOCK' && element.traversalSeconds === null) {
+        break;
+      }
+      const seconds = element?.elementType === 'BLOCK' ? element.traversalSeconds! : 0;
+      intervals.push({ pathIndex: path.length + offset, elementId: stepId, start: cursor, end: cursor + seconds * 1000 });
+      cursor += seconds * 1000;
+    }
+    if (intervals.length === steps.length) {
+      timelines.set(elementId, intervals);
+    }
+  }
+  return timelines;
+}
+
 export interface OpenStart {
   start: number;
-  // The first interlocking hold the start was moved past, if it was moved.
-  avoided: InterlockingConflict | null;
+  // The first held block the start was moved past, if it was moved.
+  avoided: TrackConflict | null;
 }
 
 // The earliest instant at or after `earliest` from which at least one next
@@ -158,27 +194,27 @@ export function earliestOpenStart(
   services: SavedService[],
   topology: TopologyResponse,
 ): OpenStart {
-  const groupByBlock = interlockingGroups(topology.elements);
+  const groupByBlock = blockGroups(topology.elements);
   const byId = new Map(topology.elements.map((element) => [element.id, element]));
   const routes = [...nextPathSteps([startElementId], topology).values()];
   let start = earliest;
-  let avoided: InterlockingConflict | null = null;
+  let avoided: TrackConflict | null = null;
   // Every pass moves the start past at least one saved interval, so the number
   // of saved intervals bounds the search.
   const maxPasses = services.reduce((count, service) => count + service.timeline.length, 0);
   for (let pass = 0; pass <= maxPasses; pass += 1) {
     // For each route, the start at which its first held block would be free.
-    const releases: { at: number; conflict: InterlockingConflict }[] = [];
+    const releases: { at: number; conflict: TrackConflict }[] = [];
     for (const steps of routes) {
       let cursor = start;
-      let release: { at: number; conflict: InterlockingConflict } | null = null;
+      let release: { at: number; conflict: TrackConflict } | null = null;
       for (const stepId of steps) {
         const element = byId.get(stepId);
         if (element?.elementType !== 'BLOCK' || element.traversalSeconds === null) {
           break;
         }
         const interval = { pathIndex: 0, elementId: stepId, start: cursor, end: cursor + element.traversalSeconds * 1000 };
-        const conflict = interlockingConflict(interval, vehicleId, services, groupByBlock, null);
+        const conflict = trackConflict(interval, vehicleId, services, groupByBlock, null);
         if (conflict !== null) {
           release = { at: conflict.end - (cursor - start), conflict };
           break;

@@ -2,6 +2,7 @@
 import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
 import * as d3 from 'd3';
 
+import { BATTERY_SEGMENTS, BatteryLevel, batteryGauge } from './battery-gauge';
 import { PlaybackVehicleState, TopologyResponse, TrackElementResponse } from './models';
 import { nextPathSteps, visitLabel } from './path-steps';
 
@@ -17,8 +18,8 @@ export interface BlockTraversalChange {
 
 const VIEWBOX_WIDTH = 1040;
 const VIEWBOX_HEIGHT = 360;
-// Headroom above the top row so a second stacked vehicle marker is not clipped.
-const VIEWBOX_TOP_MARGIN = 40;
+// Headroom above the top row so three stacked vehicle markers are not clipped.
+const VIEWBOX_TOP_MARGIN = 72;
 
 // Candidates use blue so they stay distinct from the green selected path.
 const CANDIDATE_STROKE = '#2563eb';
@@ -31,6 +32,37 @@ const NODE_GAP = 4;
 // Blocks on the configuration map are drawn as input fields.
 const CONFIG_BLOCK_HALF_WIDTH = 31;
 const CONFIG_BLOCK_RADIUS = 6;
+
+// Battery icon on a playback vehicle marker, positioned inside the marker box.
+const BATTERY_X = 13;
+const BATTERY_WIDTH = 27;
+const BATTERY_HEIGHT = 12;
+const BATTERY_SEGMENT_WIDTH = 4;
+const BATTERY_SEGMENT_GAP = 1;
+const BATTERY_FILL: Record<BatteryLevel, string> = {
+  high: '#2e9e5b',
+  low: '#e0a100',
+  empty: '#d92d20',
+};
+const BATTERY_UNFILLED = '#e3e0d5';
+
+// A playback vehicle seen from above, pointing right before it is turned.
+const CAR_LENGTH = 30;
+const CAR_WIDTH = 16;
+const CAR_WHEEL_LENGTH = 7;
+const CAR_WHEEL_WIDTH = 4;
+// Wheel centres: front and rear axle, on both sides, half out from under the body.
+const CAR_WHEELS: [number, number][] = [-8, 8].flatMap((x) =>
+  [-CAR_WIDTH / 2, CAR_WIDTH / 2].map((y) => [x, y] as [number, number]));
+const CAR_STACK_OFFSET = 7;
+
+const VEHICLE_INPUTS = new Set(['vehicles', 'alertVehicleIds', 'batteryAlertVehicleIds', 'focusVehicleId']);
+
+const ALERT_STROKE = '#b42318';
+const ALERT_BLINK_SECONDS = 0.9;
+// The outline and glow around the vehicle being edited.
+const FOCUS_STROKE = '#ffb020';
+const FOCUS_PULSE_SECONDS = 1.2;
 
 const ARROW_GROW_MS = 350;
 const RING_TRACE_MS = 450;
@@ -65,6 +97,17 @@ const POINTS: Record<string, Point> = {
 };
 
 type Connection = TopologyResponse['connections'][number];
+
+// A vehicle keeps one colour whichever vehicles are on the map at the moment:
+// the number in its ID picks the colour, so V1 is always the first one.
+export function vehicleColor(vehicleId: string): string {
+  const digits = vehicleId.match(/\d+/);
+  const index = digits !== null
+    ? Number(digits[0]) - 1
+    : [...vehicleId].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  const palette = d3.schemeTableau10;
+  return palette[((index % palette.length) + palette.length) % palette.length];
+}
 
 // Distance from a node's centre to its rounded-rectangle outline along the
 // unit direction (ux, uy). Sizes match the node shapes drawn in render().
@@ -138,6 +181,8 @@ function connectionLine(
         <span><i class="selected"></i>Selected path</span>
         <span><i class="candidate"></i>Available next</span>
         <span><i class="blocked"></i>Blocked next</span>
+        <span><i class="vehicle"></i>Vehicle position when the path ends</span>
+        <span><i class="focus"></i>Vehicle being edited</span>
       }
       @if (mapPurpose === 'viewer') {
         <span><i class="vehicle"></i>Playback vehicle position</span>
@@ -153,7 +198,7 @@ function connectionLine(
   styles: [`
     :host { display: block; min-width: 0; }
     .map-frame { width: 100%; overflow: hidden; border: 1px solid #e3e0d5; border-radius: 8px; background: #faf9f5; }
-    svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 400; min-height: 260px; }
+    svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 432; min-height: 260px; }
     .map-empty { margin: 0; padding: 28px 16px; border: 1px dashed #d1cfc5; border-radius: 8px; background: #faf9f5; color: #73726c; font-size: 14px; font-weight: 700; text-align: center; }
     [hidden] { display: none !important; }
     .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: #73726c; font-size: 12px; font-weight: 700; }
@@ -174,9 +219,10 @@ function connectionLine(
       .legend .candidate { animation: none; }
     }
     .legend .vehicle { border-radius: 50%; background: #4e79a7; }
+    .legend .focus { border-color: #ffb020; box-shadow: 0 0 5px 1px #ffb020; }
     .legend .conflict { border-color: #b42318; background: #fee4e2; }
     @media (max-width: 680px) {
-      svg { aspect-ratio: 520 / 1020; min-height: 0; }
+      svg { aspect-ratio: 520 / 1052; min-height: 0; }
     }
   `],
 })
@@ -188,6 +234,12 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   @Input() interactive = false;
   @Input() vehicles: PlaybackVehicleState[] = [];
   @Input() conflictElementIds: string[] = [];
+  // Vehicles in the way of the path being built, and vehicles whose battery
+  // it would break a rule for. Their marker or battery icon blinks.
+  @Input() alertVehicleIds: string[] = [];
+  @Input() batteryAlertVehicleIds: string[] = [];
+  // The vehicle the editor form is about; its car and label get a pulsing, glowing outline.
+  @Input() focusVehicleId = '';
   // Next elements that cannot be entered right now, with the reason shown on hover.
   @Input() blockedElements: Record<string, string> = {};
   @Input() mapPurpose: 'editor' | 'viewer' | 'config' = 'editor';
@@ -234,7 +286,17 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         : [];
       this.pathBeforeGrowth = previous;
     }
-    if (this.svgRef && Object.keys(changes).length > 0) {
+    if (!this.svgRef || Object.keys(changes).length === 0) {
+      return;
+    }
+    // The editor replays vehicle movement frame by frame. Its nodes do not
+    // depend on the vehicles, so only the markers are redrawn and the path
+    // animation started by the same click keeps running.
+    const vehiclesOnly = this.mapPurpose === 'editor'
+      && Object.keys(changes).every((key) => VEHICLE_INPUTS.has(key));
+    if (vehiclesOnly) {
+      this.drawVehicles();
+    } else {
       this.render();
     }
   }
@@ -271,7 +333,9 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     const selectedIds = new Set(this.selectedPath);
     const conflictIds = new Set(this.conflictElementIds);
     const eligibleIds = this.eligibleElementIds();
-    const playbackIds = new Set(this.vehicles.map((vehicle) => vehicle.elementId));
+    // In the editor a node's colour already means selected, candidate or
+    // blocked, so only the vehicle markers show where vehicles are.
+    const playbackIds = new Set(this.mapPurpose === 'editor' ? [] : this.vehicles.map((vehicle) => vehicle.elementId));
 
     this.drawStationBands(svg, compact);
     // Lines run between node outlines rather than node centres, so nothing
@@ -489,6 +553,10 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       }
     }
 
+    if (this.mapPurpose === 'editor') {
+      this.blink(node.filter((element) => conflictIds.has(element.id)).select<SVGRectElement>('.node-shape'));
+    }
+
     const visits = d3.group(this.selectedPath.map((id, index) => ({ id, index: index + 1 })), (item) => item.id);
     node.filter((element) => visits.has(element.id))
       .append('text')
@@ -520,7 +588,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-weight', 800)
       .text('blocked');
 
-    this.drawVehicles(svg, points, compact);
+    this.drawVehicles();
   }
 
   private drawTraversalInputs(blocks: d3.Selection<SVGGElement, TrackElementResponse, SVGGElement, unknown>): void {
@@ -571,6 +639,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
 
   private addMarkers(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
     const defs = svg.append('defs');
+    // The glow around the vehicle being edited; the region is enlarged so it is not cut off.
+    defs.append('filter')
+      .attr('id', 'focus-glow')
+      .attr('x', '-60%').attr('y', '-60%').attr('width', '220%').attr('height', '220%')
+      .append('feDropShadow')
+      .attr('dx', 0).attr('dy', 0).attr('stdDeviation', 3)
+      .attr('flood-color', FOCUS_STROKE).attr('flood-opacity', 1);
     // Heads have a fixed size and sit beyond the line end, so the tip meets
     // the target node's outline instead of hiding under the node.
     defs.append('marker')
@@ -631,64 +706,241 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .text((station) => station.id);
   }
 
-  private drawVehicles(
-    svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
-    points: Record<string, Point>,
-    compact: boolean,
-  ): void {
-    const color = d3.scaleOrdinal<string, string>(d3.schemeTableau10);
-    const vehicles = this.vehicles.filter((vehicle) => points[vehicle.elementId]);
+  private drawVehicles(): void {
+    const svg = d3.select(this.svgRef!.nativeElement);
+    const compact = window.matchMedia('(max-width: 680px)').matches;
+    const points = this.layoutPoints(compact);
+    svg.selectAll('g.vehicle-cars, g.vehicles').remove();
+    const color = vehicleColor;
     const elementCounts = new Map<string, number>();
-    const markers = svg.append('g')
-      .attr('class', 'vehicles')
-      .selectAll('g')
-      .data(vehicles)
-      .join('g')
-      .attr('transform', (vehicle) => {
-        // Vehicles on the same element stack upwards so a conflict shows every vehicle.
-        const count = elementCounts.get(vehicle.elementId) ?? 0;
-        elementCounts.set(vehicle.elementId, count + 1);
+    // The vehicle being edited is drawn last, so it lies on top of the others
+    // sharing its element and its label is the top one of the stack.
+    const isFocus = (vehicle: PlaybackVehicleState) => vehicle.vehicleId === this.focusVehicleId;
+    const placements = [...this.vehicles.filter((vehicle) => !isFocus(vehicle)), ...this.vehicles.filter(isFocus)]
+      .filter((vehicle) => points[vehicle.elementId])
+      .map((vehicle) => {
+        const stack = elementCounts.get(vehicle.elementId) ?? 0;
+        elementCounts.set(vehicle.elementId, stack + 1);
         const start = points[vehicle.fromElementId] ?? points[vehicle.elementId];
         const end = points[vehicle.toElementId] ?? start;
-        const x = start.x + (end.x - start.x) * vehicle.progress;
-        const y = start.y + (end.y - start.y) * vehicle.progress;
+        const headingFrom = points[vehicle.headingFromElementId] ?? start;
+        const headingTo = points[vehicle.headingToElementId] ?? headingFrom;
+        return {
+          vehicle,
+          stack,
+          x: start.x + (end.x - start.x) * vehicle.progress,
+          y: start.y + (end.y - start.y) * vehicle.progress,
+          // Follows the track line the vehicle is on; a vehicle with no direction points right.
+          degrees: Math.atan2(headingTo.y - headingFrom.y, headingTo.x - headingFrom.x) * 180 / Math.PI,
+        };
+      });
+    type Placement = typeof placements[number];
+
+    // Seen from above and drawn pointing right, then turned to the heading.
+    const cars = svg.append('g')
+      .attr('class', 'vehicle-cars')
+      .selectAll('g')
+      .data(placements)
+      .join('g')
+      // Vehicles on the same spot step aside so a conflict shows every vehicle.
+      .attr('transform', ({ x, y, stack, degrees }) =>
+        `translate(${x - stack * CAR_STACK_OFFSET},${y - stack * CAR_STACK_OFFSET}) rotate(${degrees})`);
+    cars.selectAll('rect.wheel')
+      .data(CAR_WHEELS)
+      .join('rect')
+      .attr('class', 'wheel')
+      .attr('x', ([x]) => x - CAR_WHEEL_LENGTH / 2)
+      .attr('y', ([, y]) => y - CAR_WHEEL_WIDTH / 2)
+      .attr('width', CAR_WHEEL_LENGTH)
+      .attr('height', CAR_WHEEL_WIDTH)
+      .attr('rx', 1.5)
+      .attr('fill', '#141413');
+    cars.append('rect')
+      .attr('x', -CAR_LENGTH / 2)
+      .attr('y', -CAR_WIDTH / 2)
+      .attr('width', CAR_LENGTH)
+      .attr('height', CAR_WIDTH)
+      .attr('rx', 4.5)
+      .attr('fill', ({ vehicle }) => color(vehicle.vehicleId))
+      .attr('stroke', '#ffffff')
+      .attr('stroke-width', 1.5);
+    // The windscreen and headlights mark the front.
+    cars.append('rect')
+      .attr('x', 3)
+      .attr('y', -CAR_WIDTH / 2 + 3)
+      .attr('width', 6)
+      .attr('height', CAR_WIDTH - 6)
+      .attr('rx', 1.5)
+      .attr('fill', '#eaf2fb');
+    cars.append('rect')
+      .attr('x', -CAR_LENGTH / 2 + 3.5)
+      .attr('y', -CAR_WIDTH / 2 + 4)
+      .attr('width', 3)
+      .attr('height', CAR_WIDTH - 8)
+      .attr('rx', 1)
+      .attr('fill', '#eaf2fb')
+      .attr('opacity', 0.7);
+    // The vehicle being edited: a glowing outline around the car that pulses,
+    // and a light blink of the car itself.
+    const focused = cars.filter(({ vehicle }) => vehicle.vehicleId === this.focusVehicleId);
+    this.pulse(focused, '1;0.75;1');
+    this.pulse(focused.append('rect')
+      .attr('x', -CAR_LENGTH / 2 - 4)
+      .attr('y', -CAR_WIDTH / 2 - 5)
+      .attr('width', CAR_LENGTH + 8)
+      .attr('height', CAR_WIDTH + 10)
+      .attr('rx', 8)
+      .attr('fill', 'none')
+      .attr('stroke', FOCUS_STROKE)
+      .attr('stroke-width', 2.5)
+      .attr('filter', 'url(#focus-glow)'), '1;0.3;1');
+    cars.selectAll('circle.headlight')
+      .data([-CAR_WIDTH / 2 + 3.5, CAR_WIDTH / 2 - 3.5])
+      .join('circle')
+      .attr('class', 'headlight')
+      .attr('cx', CAR_LENGTH / 2 - 2.5)
+      .attr('cy', (y) => y)
+      .attr('r', 1.3)
+      .attr('fill', '#ffd966');
+
+    const markers = svg.append('g')
+      .attr('class', 'vehicles')
+      .selectAll<SVGGElement, Placement>('g')
+      .data(placements)
+      .join('g')
+      .attr('transform', ({ x, y, stack }) => {
         if (compact) {
           // Tracks run vertically here, so labels sit beside the track, towards the map centre.
-          return `translate(${x + (x < 260 ? 64 : -64)},${y - count * 32})`;
+          return `translate(${x + (x < 260 ? 78 : -78)},${y - stack * 32})`;
         }
-        return `translate(${x},${y - 38 - count * 32})`;
+        return `translate(${x},${y - 38 - stack * 32})`;
       });
+    markers.append('title')
+      .text(({ vehicle }) => `${vehicle.vehicleId} at ${vehicle.elementId}, battery ${Math.round(vehicle.battery)}%`);
+    // The same glowing outline around the label of the vehicle being edited.
+    this.pulse(markers.filter(({ vehicle }) => vehicle.vehicleId === this.focusVehicleId)
+      .append('rect')
+      .attr('x', -53)
+      .attr('y', -19)
+      .attr('width', 106)
+      .attr('height', 38)
+      .attr('rx', 9)
+      .attr('fill', 'none')
+      .attr('stroke', FOCUS_STROKE)
+      .attr('stroke-width', 2.5)
+      .attr('filter', 'url(#focus-glow)'), '1;0.3;1');
+    const alertIds = new Set(this.alertVehicleIds);
+    const inTheWay = ({ vehicle }: Placement) => alertIds.has(vehicle.vehicleId);
     markers.append('rect')
-      .attr('x', -35)
+      .attr('x', -49)
       .attr('y', -15)
-      .attr('width', 70)
+      .attr('width', 98)
       .attr('height', 30)
       .attr('rx', 6)
-      .attr('fill', '#ffffff')
-      .attr('stroke', (vehicle) => color(vehicle.vehicleId))
-      .attr('stroke-width', 2);
+      .attr('fill', (placement) => inTheWay(placement) ? '#fee4e2' : '#ffffff')
+      .attr('stroke', (placement) => inTheWay(placement) ? ALERT_STROKE : color(placement.vehicle.vehicleId))
+      .attr('stroke-width', (placement) => inTheWay(placement) ? 3 : 2);
+    this.blink(cars.filter(inTheWay));
+    this.blink(markers.filter(inTheWay));
     markers.append('circle')
-      .attr('cx', -20)
+      .attr('cx', -34)
       .attr('r', 10)
-      .attr('fill', (vehicle) => color(vehicle.vehicleId))
+      .attr('fill', ({ vehicle }) => color(vehicle.vehicleId))
       .attr('stroke', '#fff')
       .attr('stroke-width', 2);
     markers.append('text')
-      .attr('x', -20)
+      .attr('x', -34)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', '#fff')
       .attr('font-size', 8)
       .attr('font-weight', 800)
-      .text((vehicle) => vehicle.vehicleId);
+      .text(({ vehicle }) => vehicle.vehicleId);
     markers.append('text')
-      .attr('x', -4)
+      .attr('x', -18)
       .attr('text-anchor', 'start')
       .attr('dominant-baseline', 'central')
       .attr('fill', '#141413')
       .attr('font-size', 11)
       .attr('font-weight', 800)
-      .text((vehicle) => vehicle.elementId);
+      .text(({ vehicle }) => vehicle.elementId);
+    this.drawBatteries(markers);
+  }
+
+  private drawBatteries<Placement extends { vehicle: PlaybackVehicleState }>(
+    markers: d3.Selection<SVGGElement, Placement, SVGGElement, unknown>,
+  ): void {
+    const batteries = markers.append('g')
+      .attr('class', 'battery')
+      .attr('transform', `translate(${BATTERY_X},${-BATTERY_HEIGHT / 2})`);
+    const batteryAlertIds = new Set(this.batteryAlertVehicleIds);
+    const batteryAlert = ({ vehicle }: Placement) => batteryAlertIds.has(vehicle.vehicleId);
+    batteries.append('rect')
+      .attr('width', BATTERY_WIDTH)
+      .attr('height', BATTERY_HEIGHT)
+      .attr('rx', 2)
+      .attr('fill', (placement) => batteryAlert(placement) ? '#fee4e2' : '#ffffff')
+      .attr('stroke', (placement) => batteryAlert(placement) ? ALERT_STROKE : '#73726c')
+      .attr('stroke-width', (placement) => batteryAlert(placement) ? 2 : 1);
+    this.blink(batteries.filter(batteryAlert));
+    // The terminal nub that makes the outline read as a battery.
+    batteries.append('rect')
+      .attr('x', BATTERY_WIDTH)
+      .attr('y', BATTERY_HEIGHT / 2 - 2.5)
+      .attr('width', 2.5)
+      .attr('height', 5)
+      .attr('rx', 1)
+      .attr('fill', '#73726c');
+    batteries.selectAll('rect.segment')
+      .data(({ vehicle }) => {
+        const gauge = batteryGauge(vehicle.battery);
+        return d3.range(BATTERY_SEGMENTS).map((index) =>
+          index < gauge.filledSegments ? BATTERY_FILL[gauge.level] : BATTERY_UNFILLED);
+      })
+      .join('rect')
+      .attr('class', 'segment')
+      .attr('x', (_, index) => 1.5 + index * (BATTERY_SEGMENT_WIDTH + BATTERY_SEGMENT_GAP))
+      .attr('y', 2)
+      .attr('width', BATTERY_SEGMENT_WIDTH)
+      .attr('height', BATTERY_HEIGHT - 4)
+      .attr('fill', (fill) => fill);
+    this.drawChargingBolts(batteries);
+  }
+
+  // A bolt over the battery of a vehicle that is charging in the yard.
+  private drawChargingBolts<Placement extends { vehicle: PlaybackVehicleState }>(
+    batteries: d3.Selection<SVGGElement, Placement, SVGGElement, unknown>,
+  ): void {
+    batteries.filter(({ vehicle }) => vehicle.charging)
+      .append('path')
+      .attr('class', 'charging')
+      .attr('d', 'M15.5,-2 L8.5,6.6 L12.6,6.6 L11,14 L18.5,5 L14.2,5 Z')
+      .attr('fill', '#ffc400')
+      .attr('stroke', '#5c3d00')
+      .attr('stroke-width', 0.8)
+      .attr('stroke-linejoin', 'round');
+  }
+
+  private blink<Element extends d3.BaseType, Datum, Parent extends d3.BaseType>(
+    selection: d3.Selection<Element, Datum, Parent, unknown>,
+  ): void {
+    this.pulse(selection, '1;0.25;1', ALERT_BLINK_SECONDS);
+  }
+
+  // SMIL, because Angular's scoped component styles do not reach elements created by d3.
+  private pulse<Element extends d3.BaseType, Datum, Parent extends d3.BaseType>(
+    selection: d3.Selection<Element, Datum, Parent, unknown>,
+    opacities: string,
+    seconds = FOCUS_PULSE_SECONDS,
+  ): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    selection.append('animate')
+      .attr('attributeName', 'opacity')
+      .attr('values', opacities)
+      .attr('dur', `${seconds}s`)
+      .attr('repeatCount', 'indefinite');
   }
 
   private layoutPoints(compact: boolean): Record<string, Point> {

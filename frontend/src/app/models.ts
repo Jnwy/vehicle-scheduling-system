@@ -105,5 +105,12 @@ export interface PlaybackVehicleState {
   fromElementId: string;
   toElementId: string;
   progress: number;
+  // The vehicle points from one element towards the other. While it stands
+  // still it keeps the direction it arrived in; both are `elementId` when the
+  // schedule gives it no direction at all.
+  headingFromElementId: string;
+  headingToElementId: string;
   battery: number;
+  // True while the vehicle waits in the yard and its battery is still rising.
+  charging: boolean;
 }

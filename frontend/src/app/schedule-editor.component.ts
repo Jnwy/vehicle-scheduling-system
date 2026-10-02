@@ -6,20 +6,32 @@ import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { SchedulingApi } from './scheduling-api.service';
-import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
+import {
+  BatteryConflict, INITIAL_BATTERY, MINIMUM_DEPARTURE_BATTERY, TimedService, blockIdSet, newBatteryConflicts, scheduleUntil,
+  secondsToDepartureCharge, timedService, vehicleBatterySegments, withCandidate,
+} from './battery-preview';
+import { PlaybackVehicleState, ScheduleAnalysis, ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
 import { describeConflicts, errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
 import { nextPathSteps, pathLengthProblems, withoutLastStep } from './path-steps';
-import { TrackMapComponent } from './track-map.component';
+import { vehicleStatesAt } from './playback';
+import { serviceEndTime, servicePositions } from './schedule-overview';
+import { ServicePathStripComponent } from './service-path-strip.component';
+import { TrackMapComponent, vehicleColor } from './track-map.component';
 import {
-  ScheduleWindow, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart,
-  interlockingConflicts,
-  pathEndpointProblems, savedWindow, vehicleProblems,
+  ScheduleWindow, TrackConflict, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart,
+  nextStepTimelines, pathEndpointProblems, savedWindow, trackConflicts, vehicleProblems,
 } from './service-conflicts';
 import {
   BusyTimeOptions, StartTimeParts, VehicleBusyWindow, VehicleSlot, busyTimeOptions, calendarMonthCells, composeStartTime, derivePlatformTimings, nextStartTime,
   savedTimingsAreStale, splitStartTime, startPartRange, freeInstantWithin, taipeiLocal, touchesBusy, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
   vehicleSlots,
 } from './service-timing';
+import { unavailableSpans } from './start-availability';
+
+// How long the map takes to advance through the time one click adds to the path.
+const MAP_ADVANCE_MS = 1200;
+// Room on the timeline bar before the first and after the last saved service.
+const TIMELINE_MARGIN_MS = 10 * 60 * 1000;
 
 interface TimingFormRow {
   pathIndex: number;
@@ -38,7 +50,7 @@ interface ServiceForm {
 
 @Component({
   selector: 'app-schedule-editor',
-  imports: [FormsModule, RouterLink, TrackMapComponent],
+  imports: [FormsModule, RouterLink, ServicePathStripComponent, TrackMapComponent],
   templateUrl: './schedule-editor.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -62,9 +74,40 @@ export class ScheduleEditorComponent implements OnInit {
   readonly pathSelection = signal<string[]>(['Y']);
   // Live previews of what the backend would reject; see service-conflicts.ts.
   readonly blockers = signal<string[]>([]);
+  // Low battery on the way to the yard: shown, but it does not stop a save.
+  readonly lowBatteryNotes = signal<string[]>([]);
+  // The floating status panel can be reduced to its one-line verdict.
+  readonly statusCollapsed = signal(false);
   readonly conflictElementIds = signal<string[]>([]);
   readonly blockedNext = signal<Record<string, string>>({});
+  readonly servicePositions = computed(() => servicePositions(this.services()));
+  readonly serviceEndTime = serviceEndTime;
   readonly blockedNextList = computed(() => Object.entries(this.blockedNext()));
+  // Where every vehicle is, and its battery, at the instant the path being
+  // built ends. The vehicle in the form follows the draft path.
+  readonly mapVehicles = signal<PlaybackVehicleState[]>([]);
+  readonly mapInstant = signal<number | null>(null);
+  // The battery the vehicle in the form has left where the path ends.
+  readonly draftBattery = signal<string>('');
+  // The schedule the map reads, with the draft in it, and the time span the
+  // timeline bar covers. The bar sits at the instant the path ends.
+  private mapSchedule: ScheduleAnalysis | null = null;
+  private mapDraftVehicleId: string | null = null;
+  private pathEndInstant: number | null = null;
+  readonly mapRange = signal<{ start: number; end: number } | null>(null);
+  readonly draftBar = signal<{ leftPercent: number; widthPercent: number } | null>(null);
+  readonly mapCursorPercent = computed(() => {
+    const range = this.mapRange();
+    const instant = this.mapInstant();
+    return range === null || instant === null ? 0 : ((instant - range.start) / (range.end - range.start)) * 100;
+  });
+  // Stretches of the bar the service cannot be moved to; see start-availability.ts.
+  readonly unavailableBars = signal<{ leftPercent: number; widthPercent: number; title: string; battery: boolean }[]>([]);
+  private mapPath: string[] = [];
+  private mapAdvanceFrame: number | null = null;
+  // Vehicles in the way of the path, and vehicles the path would run low.
+  readonly alertVehicleIds = signal<string[]>([]);
+  readonly batteryAlertVehicleIds = signal<string[]>([]);
   readonly deleteBlockers = computed(() => {
     const windows = this.services().map(savedWindow);
     const reasons = new Map<number, string>();
@@ -80,6 +123,7 @@ export class ScheduleEditorComponent implements OnInit {
   });
   readonly isBusy = computed(() => this.loadingInitial() || this.savingService());
   readonly formatForDisplay = formatForDisplay;
+  readonly vehicleColor = vehicleColor;
 
   serviceForm: ServiceForm = this.createEmptyForm();
   startParts: StartTimeParts = splitStartTime(this.serviceForm.startTime);
@@ -210,6 +254,7 @@ export class ScheduleEditorComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.destroyRef.onDestroy(() => this.stopMapAdvance());
     this.refreshAll();
   }
 
@@ -286,15 +331,34 @@ export class ScheduleEditorComponent implements OnInit {
     const continuation = vehicleContinuation(this.services(), vehicleId);
     const elementId = continuation?.elementId ?? 'Y';
     const earliest = Date.parse(`${continuation?.startTime ?? nextStartTime()}+08:00`);
-    const open = earliestOpenStart(elementId, earliest, vehicleId, this.services(), this.topology());
+    const notes: string[] = [];
+    // A vehicle back in the yard may only leave once it is charged to 80.
+    let charged = earliest;
+    if (continuation !== null && elementId === 'Y') {
+      const segments = vehicleBatterySegments(
+        this.services().filter((service) => service.vehicleId === vehicleId).map(timedService),
+        blockIdSet(this.topology().elements),
+      );
+      const battery = segments.length > 0 ? segments[segments.length - 1].batteryEnd : INITIAL_BATTERY;
+      charged += secondsToDepartureCharge(battery) * 1000;
+      if (charged > earliest) {
+        notes.push(`Start moved from ${this.slotTime(earliest)} to ${this.slotTime(charged)}: ${vehicleId} returns to `
+          + `the yard with ${this.batteryUnits(battery)} battery units and must charge to ${MINIMUM_DEPARTURE_BATTERY} before leaving.`);
+      }
+    }
+    const open = earliestOpenStart(elementId, charged, vehicleId, this.services(), this.topology());
     const startTime = taipeiLocal(open.start);
-    this.startMove = open.avoided === null ? null : {
-      startTime,
-      message: `Start moved from ${this.slotTime(earliest)} to ${this.slotTime(open.start)}: `
-        + `${open.avoided.vehicleId} service #${open.avoided.serviceId} holds interlocking group `
-        + `${open.avoided.group} on every way out of ${elementId} before then.`,
-    };
+    if (open.avoided !== null) {
+      notes.push(`Start moved from ${this.slotTime(charged)} to ${this.slotTime(open.start)}: `
+        + `${open.avoided.vehicleId} service #${open.avoided.serviceId} `
+        + (open.avoided.group === null
+          ? `occupies block ${open.avoided.elementId}`
+          : `holds interlocking group ${open.avoided.group}`)
+        + ` on every way out of ${elementId} before then.`);
+    }
+    this.startMove = notes.length === 0 ? null : { startTime, message: notes.join(' ') };
     this.setStartTime(startTime);
+    this.startChosen = false;
     this.setPathSelection([elementId]);
   }
 
@@ -343,17 +407,34 @@ export class ScheduleEditorComponent implements OnInit {
         this.showWarning(`${vehicleId} is busy at ${this.slotTime(chosen)}, so the start time was set to ${this.slotTime(free)}, the nearest free time in that ${key}.`);
       }
     }
-    // Follow the vehicle only while no path has been built, so typing a time never discards one.
-    if (this.editingServiceId() === null && this.pathSelection().length <= 1) {
-      const instant = Date.parse(`${this.serviceForm.startTime}+08:00`);
-      const position = Number.isFinite(instant) ? vehiclePositionAt(this.busyWindows, instant) : null;
-      if (position !== null && position.busy === null) {
-        this.setPathSelection([position.elementId ?? 'Y']);
-        return;
-      }
+    if (!this.followVehicleAt(Date.parse(`${this.serviceForm.startTime}+08:00`))) {
+      this.recalculateTimings();
     }
-    this.recalculateTimings();
   }
+
+  // A new service with no path yet starts where its vehicle is at the chosen
+  // time, so changing the time never discards a path. A start the user picked
+  // with "Change start" is kept, unless the vehicle is known to be somewhere
+  // else at that time. Returns whether the start element was set.
+  private followVehicleAt(instant: number): boolean {
+    const path = this.pathSelection();
+    if (this.editingServiceId() !== null || path.length > 1 || !Number.isFinite(instant)) {
+      return false;
+    }
+    const position = vehiclePositionAt(this.busyWindows, instant);
+    if (position.busy !== null) {
+      return false;
+    }
+    if (this.startChosen && path.length === 1 && (position.elementId === null || position.elementId === path[0])) {
+      return false;
+    }
+    this.startChosen = false;
+    this.setPathSelection([position.elementId ?? 'Y']);
+    return true;
+  }
+
+  // True once the user picked the start element on the map instead of taking the vehicle's position.
+  private startChosen = false;
 
   useFreeSlot(slot: VehicleSlot): void {
     if (slot.start === null) {
@@ -361,6 +442,7 @@ export class ScheduleEditorComponent implements OnInit {
     }
     this.setStartTime(taipeiLocal(slot.start));
     if (this.editingServiceId() === null) {
+      this.startChosen = false;
       this.setPathSelection([slot.elementId ?? 'Y']);
     } else {
       this.recalculateTimings();
@@ -374,6 +456,9 @@ export class ScheduleEditorComponent implements OnInit {
 
   // A click on the next stop also adds the blocks leading to it; see path-steps.ts.
   selectPathElement(elementId: string): void {
+    if (this.pathSelection().length === 0) {
+      this.startChosen = true;
+    }
     const steps = nextPathSteps(this.pathSelection(), this.topology()).get(elementId) ?? [elementId];
     this.setPathSelection([...this.pathSelection(), ...steps]);
   }
@@ -383,6 +468,7 @@ export class ScheduleEditorComponent implements OnInit {
   }
 
   resetPathToY(): void {
+    this.startChosen = true;
     this.setPathSelection(['Y']);
   }
 
@@ -625,6 +711,17 @@ export class ScheduleEditorComponent implements OnInit {
     const blockers: string[] = [...pathLengthProblems(path), ...pathEndpointProblems(path, elements)];
     const conflictIds = new Set<string>();
     const blocked: Record<string, string> = {};
+    let vehicleRulesBroken = false;
+    const lowBatteryNotes: string[] = [];
+    const alertVehicles = new Set<string>();
+    const batteryAlerts = new Set<string>();
+    const saved = this.services().map(timedService);
+    const draft: TimedService | null = timeline !== null && timeline.length > 0 && vehicleId
+      ? { serviceId: editingId, vehicleId, timeline }
+      : null;
+    const pathEnd = timeline !== null && timeline.length > 0
+      ? timeline[timeline.length - 1].end
+      : Date.parse(`${this.serviceForm.startTime}+08:00`);
     if (timeline !== null && vehicleId) {
       const range = (start: number, end: number) => `${this.slotTime(start)} to ${this.slotTime(end)}`;
       if (timeline.length >= 2) {
@@ -642,7 +739,9 @@ export class ScheduleEditorComponent implements OnInit {
             + `(${range(problem.other.start, problem.other.end)}).`
           : `${problem.from.vehicleId} cannot continue from ${label(problem.from)} ending at `
             + `${problem.from.endElementId} to ${label(problem.to)} starting at ${problem.to.startElementId}.`;
-        blockers.push(...vehicleProblems(candidate, this.services().map(savedWindow)).map(describe));
+        const problems = vehicleProblems(candidate, this.services().map(savedWindow));
+        vehicleRulesBroken = problems.length > 0;
+        blockers.push(...problems.map(describe));
       } else {
         // Before a path exists only the start instant can be judged.
         const busy = this.busyAtStart;
@@ -650,19 +749,74 @@ export class ScheduleEditorComponent implements OnInit {
           blockers.push(`${vehicleId} is running service #${busy.serviceId} at this time (${range(busy.start, busy.end)}).`);
         }
       }
-      const held = (group: string, holder: { vehicleId: string; serviceId: number; start: number; end: number }) =>
-        `interlocking group ${group} is held by ${holder.vehicleId} service #${holder.serviceId}, ${range(holder.start, holder.end)}`;
-      for (const conflict of interlockingConflicts(timeline, vehicleId, this.services(), elements, editingId)) {
+      const held = (conflict: TrackConflict) =>
+        (conflict.group === null
+          ? `block ${conflict.elementId} is occupied by`
+          : `interlocking group ${conflict.group} is held by`)
+        + ` ${conflict.vehicleId} service #${conflict.serviceId}, ${range(conflict.start, conflict.end)}`;
+      for (const conflict of trackConflicts(timeline, vehicleId, this.services(), elements, editingId)) {
         conflictIds.add(conflict.elementId);
-        blockers.push(`${conflict.elementId} (step ${conflict.pathIndex + 1}): ${held(conflict.group, conflict)}.`);
+        alertVehicles.add(conflict.vehicleId);
+        blockers.push(`${conflict.elementId} (step ${conflict.pathIndex + 1}): ${held(conflict)}.`);
       }
-      const pathEnd = timeline.length > 0
-        ? timeline[timeline.length - 1].end
-        : Date.parse(`${this.serviceForm.startTime}+08:00`);
+      // The battery is only worked out for a schedule the vehicle can drive:
+      // across an overlap or a jump between stops the numbers mean nothing,
+      // and the backend rejects those first as well.
+      const draftBatteryConflicts = draft !== null && timeline.length >= 2 && !vehicleRulesBroken
+        ? newBatteryConflicts(draft, saved, elements)
+        : [];
+      for (const conflict of draftBatteryConflicts) {
+        batteryAlerts.add(conflict.vehicleId);
+        if (conflict.allowed) {
+          lowBatteryNotes.push(`${conflict.vehicleId} is below 30 battery units from ${conflict.elementId} `
+            + `(step ${conflict.pathIndex! + 1}) at ${this.slotTime(conflict.start)} until it reaches the yard.`);
+        } else {
+          blockers.push(this.describeBatteryConflict(conflict, draft!));
+        }
+      }
       for (const [elementId, conflict] of blockedNextElements(path, pathEnd, vehicleId, this.services(), this.topology(), editingId)) {
-        blocked[elementId] = `on the way through ${conflict.elementId}, ${held(conflict.group, conflict)}`;
+        alertVehicles.add(conflict.vehicleId);
+        blocked[elementId] = `on the way through ${conflict.elementId}, ${held(conflict)}`;
+      }
+      // A next stop is also blocked when the way there would break a battery
+      // rule. Only this path's own steps count: what the unfinished path does
+      // to later services is judged once the stop is added. Once the path
+      // itself breaks a rule, every next stop would repeat it.
+      if (draftBatteryConflicts.every((conflict) => conflict.allowed)) {
+        for (const [elementId, intervals] of nextStepTimelines(path, pathEnd, this.topology())) {
+          const extended: TimedService = { serviceId: editingId, vehicleId, timeline: [...timeline, ...intervals] };
+          const conflict = elementId in blocked
+            ? undefined
+            : newBatteryConflicts(extended, saved, elements)
+              .find((found) => found.service === extended && !found.allowed);
+          // No alarm on the vehicle for this: the path itself is fine, for
+          // example it has just reached the yard and has to charge first.
+          if (conflict !== undefined) {
+            blocked[elementId] = this.describeBatteryConflict(conflict, extended);
+          }
+        }
       }
     }
+    const shown = draft === null ? saved : withCandidate(saved, draft);
+    // The timeline bar spans every saved service and the draft.
+    const starts = shown.flatMap((service) => service.timeline.slice(0, 1).map((interval) => interval.start));
+    const ends = shown.flatMap((service) => service.timeline.slice(-1).map((interval) => interval.end));
+    // The span is taken from the saved services so it stays still while the
+    // draft is dragged; it only grows when the draft leaves it.
+    const savedStarts = saved.flatMap((service) => service.timeline.slice(0, 1).map((interval) => interval.start));
+    const savedEnds = saved.flatMap((service) => service.timeline.slice(-1).map((interval) => interval.end));
+    const base = savedStarts.length > 0
+      ? { start: Math.min(...savedStarts) - TIMELINE_MARGIN_MS, end: Math.max(...savedEnds) + TIMELINE_MARGIN_MS }
+      : this.mapRange() ?? { start: pathEnd - 3 * TIMELINE_MARGIN_MS, end: pathEnd + 3 * TIMELINE_MARGIN_MS };
+    const range = Number.isFinite(pathEnd)
+      // Room is kept after the path end, so the bar can always be dragged later.
+      ? { start: Math.min(pathEnd, base.start, ...starts), end: Math.max(pathEnd + TIMELINE_MARGIN_MS, base.end, ...ends) }
+      : null;
+    this.mapSchedule = range === null ? null : scheduleUntil(shown, elements, range.end);
+    this.mapDraftVehicleId = draft === null ? null : vehicleId;
+    this.pathEndInstant = range === null ? null : pathEnd;
+    const span = range === null ? 0 : range.end - range.start;
+    const range2 = (start: number, end: number) => `${this.slotTime(start)} and ${this.slotTime(end)}`;
     // The map redraws whenever an input changes identity, so keep unchanged values.
     const setIfChanged = <T>(target: { (): T; set(value: T): void }, value: T) => {
       if (JSON.stringify(target()) !== JSON.stringify(value)) {
@@ -670,8 +824,114 @@ export class ScheduleEditorComponent implements OnInit {
       }
     };
     setIfChanged(this.blockers, blockers);
+    setIfChanged(this.lowBatteryNotes, lowBatteryNotes);
     setIfChanged(this.conflictElementIds, [...conflictIds]);
     setIfChanged(this.blockedNext, blocked);
+    setIfChanged(this.mapRange, span > 0 ? range : null);
+    setIfChanged(this.draftBar, span > 0 && draft !== null
+      ? {
+          leftPercent: ((draft.timeline[0].start - range!.start) / span) * 100,
+          widthPercent: ((pathEnd - draft.timeline[0].start) / span) * 100,
+        }
+      : null);
+    const percent = (span: { start: number; end: number }) => ({
+      leftPercent: ((span.start - range!.start) / (range!.end - range!.start)) * 100,
+      widthPercent: ((span.end - span.start) / (range!.end - range!.start)) * 100,
+    });
+    setIfChanged(this.unavailableBars, range === null || draft === null ? [] : unavailableSpans(
+      { vehicleId, serviceId: editingId, timeline: timeline!, followsVehicle: editingId === null && path.length <= 1 && !this.startChosen },
+      range, this.services(), elements,
+    ).map((span) => ({
+      ...percent(span),
+      battery: span.reason === 'battery',
+      title: (span.reason === 'battery' ? 'Not enough battery to leave the yard: cannot end between ' : 'Cannot end between ')
+        + range2(span.start, span.end),
+    })));
+    const previousInstant = this.mapInstant();
+    const extended = path.length > this.mapPath.length
+      && this.mapPath.length > 0
+      && this.mapPath.every((elementId, index) => elementId === path[index]);
+    this.mapPath = path;
+    this.stopMapAdvance();
+    if (range !== null && extended && previousInstant !== null && previousInstant < pathEnd
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.advanceMap(previousInstant, pathEnd);
+    } else {
+      this.showMapAt(pathEnd);
+    }
+    setIfChanged(this.alertVehicleIds, [...alertVehicles]);
+    setIfChanged(this.batteryAlertVehicleIds, [...batteryAlerts]);
+  }
+
+  // Dragging the timeline bar moves the whole service in time: the bar is the
+  // instant the path ends, so the start time moves by the same amount.
+  moveServiceTo(seconds: number | string): void {
+    const start = Date.parse(`${this.serviceForm.startTime}+08:00`);
+    if (this.pathEndInstant === null || !Number.isFinite(start)) {
+      return;
+    }
+    const moved = start + Number(seconds) * 1000 - this.pathEndInstant;
+    this.setStartTime(taipeiLocal(moved));
+    if (!this.followVehicleAt(moved)) {
+      this.recalculateTimings();
+    }
+  }
+
+  moveServiceFromAxis(event: MouseEvent): void {
+    const range = this.mapRange();
+    if (range !== null) {
+      const axis = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      const fraction = Math.max(0, Math.min(1, (event.clientX - axis.left) / axis.width));
+      this.moveServiceTo(Math.round((range.start + (range.end - range.start) * fraction) / 1000));
+    }
+  }
+
+  // A click that extends the path takes time. The map advances through it, so
+  // every vehicle is seen moving to where it is when the path ends.
+  private advanceMap(from: number, to: number): void {
+    const startedAt = performance.now();
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / MAP_ADVANCE_MS);
+      this.showMapAt(from + (to - from) * progress);
+      this.mapAdvanceFrame = progress < 1 ? requestAnimationFrame(step) : null;
+    };
+    this.mapAdvanceFrame = requestAnimationFrame(step);
+  }
+
+  private stopMapAdvance(): void {
+    if (this.mapAdvanceFrame !== null) {
+      cancelAnimationFrame(this.mapAdvanceFrame);
+      this.mapAdvanceFrame = null;
+    }
+  }
+
+  private showMapAt(instant: number): void {
+    const vehicles = this.mapSchedule === null ? [] : vehicleStatesAt(this.mapSchedule, this.topology(), instant);
+    const draftVehicleId = this.mapDraftVehicleId;
+    const draftState = vehicles.find((vehicle) => vehicle.vehicleId === draftVehicleId);
+    // The map redraws whenever an input changes identity, so keep unchanged values.
+    if (JSON.stringify(this.mapVehicles()) !== JSON.stringify(vehicles)) {
+      this.mapVehicles.set(vehicles);
+    }
+    this.mapInstant.set(this.mapSchedule === null ? null : instant);
+    this.draftBattery.set(draftState === undefined
+      ? ''
+      : `${draftVehicleId} is at ${draftState.elementId} with ${this.batteryUnits(draftState.battery)} battery units left.`);
+  }
+
+  private batteryUnits(battery: number): string {
+    return String(Math.floor(battery * 10) / 10);
+  }
+
+  private describeBatteryConflict(conflict: BatteryConflict, draft: TimedService): string {
+    const where = conflict.service === draft
+      ? `step ${conflict.pathIndex! + 1}`
+      : conflict.service !== null ? `service #${conflict.service.serviceId}` : 'while waiting';
+    const at = `${conflict.elementId} (${where}) at ${this.slotTime(conflict.start)}`;
+    return conflict.kind === 'INSUFFICIENT_CHARGE'
+      ? `${conflict.vehicleId} would leave the yard for ${at} with ${this.batteryUnits(conflict.battery)} battery units; `
+        + `${MINIMUM_DEPARTURE_BATTERY} are required, which takes ${secondsToDepartureCharge(conflict.battery)} more seconds in the yard.`
+      : `${conflict.vehicleId} would drop below 30 battery units outside the yard, on ${at}.`;
   }
 
   private clearNotice(): void {

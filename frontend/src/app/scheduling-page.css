@@ -545,6 +545,47 @@ select:focus {
   width: 140px;
 }
 
+.vehicle-picker {
+  display: grid;
+  gap: 6px;
+  color: #3d3d3a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.vehicle-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button.vehicle-option {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: auto;
+  min-width: 56px;
+  min-height: 0;
+  padding: 5px 8px 4px;
+  border: 2px solid #d1cfc5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3d3d3a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+button.vehicle-option:hover:not(:disabled) {
+  border-color: var(--vehicle-color);
+}
+
+button.vehicle-option.selected {
+  border-color: #ffb020;
+  box-shadow: 0 0 0 2px rgba(255, 176, 32, 0.35), 0 0 8px rgba(255, 176, 32, 0.7);
+  color: #141413;
+}
+
 .start-time {
   display: grid;
   gap: 6px;
@@ -807,6 +848,157 @@ select:focus {
   font-size: 13px;
 }
 
+/* Floats over the page so it stays in view next to the timeline and the map,
+   and never moves them. */
+.map-stage {
+  position: relative;
+}
+
+.map-stage .map-actions {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  width: max-content;
+}
+
+.map-stage .map-actions button,
+.with-icon svg {
+  flex: none;
+}
+
+.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* One line that scrolls sideways, so a long path does not push the map down. */
+.map-toolbar .path-steps {
+  flex-wrap: nowrap;
+  /* Tall enough for the scrollbar a long path brings, so it adds no height. */
+  height: 48px;
+  align-items: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.map-toolbar .path-steps span {
+  flex: none;
+}
+
+.map-status {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  width: min(440px, calc(100vw - 40px));
+  max-height: 40vh;
+  padding: 10px 14px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(20, 20, 19, 0.18);
+  border: 1px solid #cfe5da;
+  border-radius: 8px;
+  background: #f3faf6;
+  color: #075f46;
+  font-size: 13px;
+}
+
+.map-status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.map-status.collapsed {
+  width: max-content;
+  max-width: calc(100vw - 40px);
+}
+
+.map-status .map-status-toggle {
+  flex: none;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: -2px -4px 0 0;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.map-status.warned {
+  border-color: #ecd9a6;
+  background: #fff8e6;
+  color: #7a5200;
+}
+
+.map-status.rejected {
+  border-width: 2px;
+  border-color: #b42318;
+  background: #fff1f0;
+  color: #9c2f24;
+}
+
+.map-status ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.map-status.rejected .note {
+  color: #7a5200;
+}
+
+.map-timeline {
+  display: grid;
+  margin-bottom: 6px;
+}
+
+.axis-unavailable {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  background: repeating-linear-gradient(135deg, #f6c9c4 0 4px, #fee4e2 4px 8px);
+}
+
+.axis-unavailable.battery,
+.unavailable-key.battery {
+  border-color: #b7791f;
+  background: repeating-linear-gradient(135deg, #f2c94c 0 4px, #fdf0c4 4px 8px);
+}
+
+.unavailable-key {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  margin: 0 2px 0 6px;
+  border: 1px solid #b42318;
+  background: repeating-linear-gradient(135deg, #f6c9c4 0 4px, #fee4e2 4px 8px);
+}
+
+.map-axis {
+  height: 22px;
+  margin-bottom: 8px;
+}
+
+.axis-service.draft {
+  opacity: 0.85;
+  background: #13795b;
+  line-height: 20px;
+}
+
+.map-instant {
+  margin: 0 0 10px;
+  color: #73726c;
+  font-size: 13px;
+}
+
 .delete-blocker {
   margin-top: 6px;
   color: #9c2f24;
@@ -850,6 +1042,24 @@ select:focus {
 .service-item {
   padding: 14px 0;
   border-bottom: 1px solid #ebe9e0;
+}
+
+.service-position {
+  position: relative;
+  height: 6px;
+  margin-top: 10px;
+  border-radius: 3px;
+  background: #ebe9e0;
+  overflow: hidden;
+}
+
+.service-position span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 3px;
+  border-radius: 3px;
+  background: #4e79a7;
 }
 
 .service-item:last-child {
@@ -1005,6 +1215,11 @@ select:focus {
 
   .icon-button {
     width: 100%;
+  }
+
+  /* On the map the three buttons stay side by side. */
+  .map-stage .map-actions button {
+    width: auto;
   }
 }
 .page-nav a {
