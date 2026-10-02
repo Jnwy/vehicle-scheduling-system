@@ -236,12 +236,8 @@ into an interlocking constraint the assignment does not describe.
 **Decision.** The Schedule Editor works out what the backend would reject
 while the path is being built: vehicle overlap, discontinuity, interlocking,
 block occupancy, battery, and deletions that would disconnect a vehicle's
-services. The save or delete button is disabled while a reason is listed. The
-map shows every vehicle where it is, with its battery, at the instant the path
-being built ends, and each click advances the map through the time it adds.
-Dragging the timeline bar under the path moves the whole service in time, and
-the times where saving would be rejected are hatched; a vehicle in the way and
-a battery that would break a rule blink.
+services. The reasons are listed and marked on the map, and the save or delete
+button is disabled while one applies.
 
 **Why.** A rejected save only says what was wrong afterwards. Showing the
 reason on the map element it concerns lets the user fix the time or the path
@@ -332,7 +328,7 @@ frontend **187 passed**.
 
 | Suite | Covers |
 | --- | --- |
-| Domain (`test_path_validation`, `test_timeline`, `test_vehicle_schedule`, `test_interlocking`, `test_service_update`, `test_schedule_analysis`, `test_schedule_conflicts`) | Path rules, timeline calculation, interval overlap, vehicle overlap and continuity, interlocking, update and delete validation, block occupancy and battery analysis and their write validation. No database needed |
+| Domain (the other seven files in `backend/tests`) | Path rules, timeline calculation, interval overlap, vehicle overlap and continuity, interlocking, update and delete validation, block occupancy and battery analysis and their write validation. No database needed |
 | Persistence (`test_persistence`) | Migrations, idempotent seed, block configuration, repository CRUD, rollback |
 | API (`test_api`) | Status codes and error bodies, rollback of rejected writes, concurrent conflicting writes |
 | Frontend (Vitest) | Pure functions: platform time derivation, stale snapshot detection, path building, the editor previews, vehicle availability, playback position and battery, viewer grouping |
