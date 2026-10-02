@@ -271,6 +271,14 @@ than one concurrent editor.
 
 The complete rules are in [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md).
 
+The assignment does not specify whether schedules cover a single day, repeat
+daily, or vary by day of the week. Each service therefore represents one
+run at explicit dates and times. Services are not restricted to a single
+calendar day, and the system does not automatically repeat them daily or
+weekly. Vehicle overlap and location continuity are still checked across
+the saved services, including those on different dates. Recurring timetables
+would require a separate template and rules for generating dated services.
+
 - Vehicles are `V1` to `V5`, and each block defaults to 20 seconds. The
   assignment gives neither value.
 - Time intervals are `[start, end)`. A vehicle may enter a resource at the
