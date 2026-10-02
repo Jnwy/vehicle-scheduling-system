@@ -1,7 +1,7 @@
 :host {
   display: block;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #17202a;
+  color: #141413;
 }
 
 /* This stylesheet is shared by the shell and every page, but only the shell
@@ -67,8 +67,8 @@ main {
 }
 
 .page-nav a.active {
-  border-color: #235f7a;
-  background: #235f7a;
+  border-color: #c15f3c;
+  background: #c15f3c;
   color: #ffffff;
 }
 
@@ -95,12 +95,12 @@ h3 {
 p,
 .muted,
 small {
-  color: #607080;
+  color: #73726c;
 }
 
 .eyebrow {
   margin-bottom: 4px;
-  color: #356570;
+  color: #ae5630;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -129,18 +129,18 @@ small {
 
 .panel {
   padding: 18px;
-  border: 1px solid #d6dee7;
+  border: 1px solid #e3e0d5;
   border-radius: 8px;
   background: #ffffff;
 }
 
 .form-panel {
-  border-top: 4px solid #2d6f8f;
+  border-top: 4px solid #d97757;
 }
 
 .map-panel {
   margin-bottom: 18px;
-  border-top: 4px solid #13795b;
+  border-top: 4px solid #d97757;
 }
 
 .map-form {
@@ -155,23 +155,23 @@ small {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
   padding: 3px;
-  border: 1px solid #bdc9d4;
+  border: 1px solid #d1cfc5;
   border-radius: 7px;
-  background: #edf1f5;
+  background: #f0eee6;
 }
 
 .segmented button {
   min-height: 32px;
   border: 0;
   background: transparent;
-  color: #425466;
+  color: #3d3d3a;
   font-size: 13px;
 }
 
 .segmented button.active {
   background: #ffffff;
-  color: #17202a;
-  box-shadow: 0 1px 3px rgb(23 32 42 / 18%);
+  color: #141413;
+  box-shadow: 0 1px 3px rgb(20 20 19 / 14%);
 }
 
 .map-toolbar,
@@ -225,7 +225,7 @@ small {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 0;
   margin-top: 12px;
-  border-top: 1px solid #dce4eb;
+  border-top: 1px solid #e3e0d5;
 }
 
 .vehicle-status {
@@ -235,7 +235,7 @@ small {
   align-items: center;
   min-width: 0;
   padding: 10px 12px;
-  border-bottom: 1px solid #dce4eb;
+  border-bottom: 1px solid #e3e0d5;
   font-size: 13px;
 }
 
@@ -265,14 +265,14 @@ small {
 
 .advanced-path {
   padding: 10px 12px;
-  border: 1px solid #d8e0e8;
+  border: 1px solid #e3e0d5;
   border-radius: 7px;
-  background: #f8fafc;
+  background: #faf9f5;
 }
 
 .advanced-path summary {
   cursor: pointer;
-  color: #435466;
+  color: #3d3d3a;
   font-size: 13px;
   font-weight: 800;
 }
@@ -304,7 +304,7 @@ small {
   max-width: min(640px, calc(100vw - 32px));
   margin: 0;
   transform: translateX(-50%);
-  box-shadow: 0 8px 24px rgba(23, 32, 42, 0.18);
+  box-shadow: 0 8px 24px rgba(20, 20, 19, 0.14);
   animation: notice-in 180ms ease-out;
 }
 
@@ -354,9 +354,9 @@ small {
 button {
   min-height: 38px;
   padding: 0 14px;
-  border: 1px solid #235f7a;
+  border: 1px solid #c15f3c;
   border-radius: 6px;
-  background: #235f7a;
+  background: #c15f3c;
   color: #ffffff;
   font: inherit;
   font-weight: 700;
@@ -364,7 +364,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #194d65;
+  background: #ae5630;
 }
 
 button:disabled {
@@ -373,13 +373,13 @@ button:disabled {
 }
 
 button.secondary {
-  border-color: #b6c4d2;
-  background: #f8fafc;
-  color: #23313f;
+  border-color: #d1cfc5;
+  background: #faf9f5;
+  color: #3d3d3a;
 }
 
 button.secondary:hover:not(:disabled) {
-  background: #e9eef4;
+  background: #f0eee6;
 }
 
 button.small {
@@ -403,9 +403,9 @@ button.danger:hover:not(:disabled) {
   height: 34px;
   min-height: 34px;
   padding: 0;
-  border-color: #c9d3dd;
+  border-color: #d1cfc5;
   background: #ffffff;
-  color: #34495e;
+  color: #3d3d3a;
   font-size: 22px;
   line-height: 1;
 }
@@ -413,7 +413,7 @@ button.danger:hover:not(:disabled) {
 label {
   display: grid;
   gap: 6px;
-  color: #435466;
+  color: #3d3d3a;
   font-size: 13px;
   font-weight: 700;
 }
@@ -424,18 +424,18 @@ select {
   min-width: 0;
   height: 38px;
   padding: 0 10px;
-  border: 1px solid #bcc9d6;
+  border: 1px solid #d1cfc5;
   border-radius: 6px;
   background: #ffffff;
-  color: #17202a;
+  color: #141413;
   font: inherit;
   font-weight: 500;
 }
 
 input:focus,
 select:focus {
-  border-color: #235f7a;
-  outline: 3px solid #d6edf3;
+  border-color: #c15f3c;
+  outline: 3px solid #f1d9cc;
 }
 
 .element-groups,
@@ -464,15 +464,15 @@ select:focus {
   gap: 5px;
   min-height: 28px;
   padding: 3px 8px;
-  border: 1px solid #cbd6e2;
+  border: 1px solid #d1cfc5;
   border-radius: 6px;
-  background: #f7f9fb;
+  background: #faf9f5;
   font-size: 13px;
   font-weight: 700;
 }
 
 .chip.block {
-  background: #f4f8f0;
+  background: #ffffff;
 }
 
 .connection-list {
@@ -500,7 +500,7 @@ select:focus {
   align-items: center;
   min-width: 0;
   padding: 8px 0;
-  border-bottom: 1px solid #edf1f5;
+  border-bottom: 1px solid #f0eee6;
 }
 
 .table-row > * {
@@ -509,7 +509,7 @@ select:focus {
 }
 
 .table-head {
-  color: #657487;
+  color: #73726c;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -545,7 +545,7 @@ select:focus {
 .start-time {
   display: grid;
   gap: 6px;
-  color: #435466;
+  color: #3d3d3a;
   font-size: 13px;
   font-weight: 700;
 }
@@ -558,16 +558,16 @@ select:focus {
   max-width: 100%;
   height: 38px;
   padding: 0 8px;
-  border: 1px solid #bcc9d6;
+  border: 1px solid #d1cfc5;
   border-radius: 6px;
-  background: #f4f7fa;
+  background: #faf9f5;
   font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
   font-variant-numeric: tabular-nums;
 }
 
 .start-parts:focus-within {
-  border-color: #235f7a;
-  outline: 3px solid #d6edf3;
+  border-color: #c15f3c;
+  outline: 3px solid #f1d9cc;
 }
 
 .start-parts select {
@@ -577,7 +577,7 @@ select:focus {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #235f7a;
+  color: #ae5630;
   font-family: inherit;
   font-size: 15px;
   font-weight: 700;
@@ -589,18 +589,18 @@ select:focus {
 .start-parts select:hover,
 .start-parts select:focus {
   outline: none;
-  background: #dce8ef;
+  background: #f3e3da;
 }
 
 .start-parts option {
   background: #ffffff;
-  color: #17202a;
+  color: #141413;
   font-weight: 500;
 }
 
 .start-parts option:disabled {
-  background: #eceff3;
-  color: #b3bcc6;
+  background: #f0eee6;
+  color: #b0aea5;
 }
 
 .date-picker {
@@ -613,7 +613,7 @@ select:focus {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #235f7a;
+  color: #ae5630;
   font-family: inherit;
   cursor: pointer;
 }
@@ -628,7 +628,7 @@ select:focus {
 .date-button:hover:not(:disabled),
 .date-button[aria-expanded="true"],
 .calendar button:hover:not(:disabled) {
-  background: #dce8ef;
+  background: #f3e3da;
 }
 
 .calendar {
@@ -638,10 +638,10 @@ select:focus {
   z-index: 50;
   width: 264px;
   padding: 10px;
-  border: 1px solid #bcc9d6;
+  border: 1px solid #d1cfc5;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 24px rgba(23, 32, 42, 0.18);
+  box-shadow: 0 8px 24px rgba(20, 20, 19, 0.14);
 }
 
 .calendar-nav {
@@ -649,7 +649,7 @@ select:focus {
   grid-template-columns: 28px 28px 1fr 28px 28px;
   align-items: center;
   margin-bottom: 6px;
-  color: #17202a;
+  color: #141413;
   text-align: center;
 }
 
@@ -667,7 +667,7 @@ select:focus {
 
 .calendar-weekday {
   padding: 4px 0;
-  color: #9aa8b5;
+  color: #91908a;
   font-size: 11px;
   font-weight: 500;
   text-align: center;
@@ -676,18 +676,18 @@ select:focus {
 .calendar-grid button {
   height: 30px;
   padding: 0;
-  color: #17202a;
+  color: #141413;
   font-size: 13px;
   font-weight: 500;
 }
 
 .calendar-grid button.today {
-  outline: 1px solid #235f7a;
+  outline: 1px solid #c15f3c;
   outline-offset: -1px;
 }
 
 .calendar-grid button.selected {
-  background: #235f7a;
+  background: #c15f3c;
   color: #ffffff;
   font-weight: 700;
 }
@@ -708,7 +708,7 @@ select:focus {
   align-items: center;
   gap: 6px;
   margin-top: 8px;
-  color: #607080;
+  color: #73726c;
   font-size: 11px;
   font-weight: 500;
 }
@@ -725,18 +725,18 @@ select:focus {
 
 .calendar-legend i.busy {
   margin-left: 8px;
-  background: #cfd6dd;
+  background: #d1cfc5;
 }
 
 .calendar-grid button:disabled {
-  background: #eceff3;
-  color: #b3bcc6;
+  background: #f0eee6;
+  color: #b0aea5;
   cursor: not-allowed;
 }
 
 .start-separator {
   padding: 0 2px;
-  color: #9aa8b5;
+  color: #91908a;
   font-weight: 500;
 }
 
@@ -752,11 +752,11 @@ select:focus {
   align-items: center;
   min-height: 36px;
   padding: 2px 10px;
-  border: 1px solid #d5dee7;
+  border: 1px solid #e3e0d5;
   border-left: 3px solid #2e8b62;
   border-radius: 6px;
-  background: #fbfcfe;
-  color: #23313f;
+  background: #faf9f5;
+  color: #3d3d3a;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -774,13 +774,13 @@ select:focus {
 }
 
 .slot.busy {
-  border-left-color: #a9b5c1;
-  background: #eceff3;
-  color: #8a96a3;
+  border-left-color: #b0aea5;
+  background: #f0eee6;
+  color: #91908a;
 }
 
 .slot.busy .slot-tag {
-  color: #8a96a3;
+  color: #91908a;
 }
 
 .blockers {
@@ -839,14 +839,14 @@ select:focus {
 .empty {
   margin-top: 16px;
   padding: 14px;
-  border: 1px dashed #b9c7d4;
+  border: 1px dashed #d1cfc5;
   border-radius: 8px;
-  background: #fbfcfe;
+  background: #faf9f5;
 }
 
 .service-item {
   padding: 14px 0;
-  border-bottom: 1px solid #e5ebf0;
+  border-bottom: 1px solid #ebe9e0;
 }
 
 .service-item:last-child {
@@ -868,7 +868,7 @@ select:focus {
 
 .vehicle-group {
   padding: 12px 0;
-  border-top: 1px solid #e1e8ef;
+  border-top: 1px solid #ebe9e0;
 }
 
 .vehicle-group-header {
@@ -905,9 +905,9 @@ select:focus {
   position: relative;
   height: 30px;
   cursor: pointer;
-  border: 1px solid #d5dee7;
+  border: 1px solid #e3e0d5;
   border-radius: 6px;
-  background: #f8fafc;
+  background: #faf9f5;
   overflow: hidden;
 }
 
@@ -941,7 +941,7 @@ select:focus {
 
 .axis-cursor {
   width: 2px;
-  background: #17202a;
+  background: #141413;
 }
 
 @media (max-width: 980px) {
@@ -1010,15 +1010,15 @@ select:focus {
   justify-content: center;
   min-height: 40px;
   padding: 8px 14px;
-  border: 1px solid #b9c7d4;
+  border: 1px solid #d1cfc5;
   border-radius: 6px;
   background: #ffffff;
-  color: #33485c;
+  color: #3d3d3a;
   font-weight: 700;
   text-decoration: none;
 }
 .page-nav a:focus-visible {
-  outline: 3px solid #d6edf3;
+  outline: 3px solid #f1d9cc;
 }
 fieldset {
   border: 0;

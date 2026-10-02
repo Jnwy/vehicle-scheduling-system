@@ -152,20 +152,20 @@ function connectionLine(
     `,
   styles: [`
     :host { display: block; min-width: 0; }
-    .map-frame { width: 100%; overflow: hidden; border: 1px solid #d5dee7; border-radius: 8px; background: #f8fafc; }
+    .map-frame { width: 100%; overflow: hidden; border: 1px solid #e3e0d5; border-radius: 8px; background: #faf9f5; }
     svg { display: block; width: 100%; height: auto; aspect-ratio: 1040 / 400; min-height: 260px; }
-    .map-empty { margin: 0; padding: 28px 16px; border: 1px dashed #c3ced9; border-radius: 8px; background: #f8fafc; color: #536475; font-size: 14px; font-weight: 700; text-align: center; }
+    .map-empty { margin: 0; padding: 28px 16px; border: 1px dashed #d1cfc5; border-radius: 8px; background: #faf9f5; color: #73726c; font-size: 14px; font-weight: 700; text-align: center; }
     [hidden] { display: none !important; }
-    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: #536475; font-size: 12px; font-weight: 700; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: #73726c; font-size: 12px; font-weight: 700; }
     .legend span { display: inline-flex; align-items: center; gap: 5px; }
-    .legend i { width: 13px; height: 13px; border: 2px solid #506172; border-radius: 3px; background: #fff; }
-    .legend .yard { background: #d8edf2; }
-    .legend .platform { background: #e6edf5; }
-    .legend .block { border-radius: 50%; background: #f0f4e9; }
-    .legend .field { width: 20px; border-color: #235f7a; }
+    .legend i { width: 13px; height: 13px; border: 2px solid #5e5d59; border-radius: 3px; background: #fff; }
+    .legend .yard { background: #e3dacc; }
+    .legend .platform { background: #f0eee6; }
+    .legend .block { border-radius: 50%; background: #ffffff; }
+    .legend .field { width: 20px; border-color: #c15f3c; }
     .legend .selected { border-color: #13795b; background: #ccebdd; }
     .legend .candidate { border-color: #2563eb; animation: candidate-breathe 1.8s ease-in-out infinite; }
-    .legend .blocked { border-style: dashed; border-color: #b42318; background: #f1f3f5; }
+    .legend .blocked { border-style: dashed; border-color: #b42318; background: #f0eee6; }
     @keyframes candidate-breathe {
       0%, 100% { border-color: #2563eb; }
       50% { border-color: rgba(37, 99, 235, 0.3); }
@@ -309,7 +309,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('y1', (edge) => lineOf(edge).y1)
       .attr('x2', (edge) => lineOf(edge).x2)
       .attr('y2', (edge) => lineOf(edge).y2)
-      .attr('stroke', (edge) => isSelectedEdge(edge) ? '#13795b' : '#9aabba')
+      .attr('stroke', (edge) => isSelectedEdge(edge) ? '#13795b' : '#b0aea5')
       .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 4 : 2.5)
       .attr('stroke-linecap', 'round')
       .attr('marker-end', (edge) => {
@@ -440,7 +440,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       const firstVisit = this.selectedPath.indexOf(arrivedId) === this.selectedPath.length - 1;
       const arrived = node.filter((element) => element.id === arrivedId);
       const shape = arrived.select<SVGRectElement>('.node-shape');
-      shape.attr('stroke', '#667889').attr('stroke-width', 2);
+      shape.attr('stroke', '#73726c').attr('stroke-width', 2);
       if (firstVisit) {
         shape
           .attr('fill', (element) => this.nodeFill(element, new Set(), conflictIds, playbackIds))
@@ -475,7 +475,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('y', (element) => configurable(element) ? -25 : 0)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
-      .attr('fill', '#17202a')
+      .attr('fill', '#141413')
       .attr('font-size', (element) => configurable(element) ? 12 : 14)
       .attr('font-weight', 800)
       .text((element) => element.id);
@@ -504,8 +504,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     // They are greyed by colour rather than opacity, because nothing is
     // dimmed when every candidate is blocked; the label and tooltip say why.
     const blocked = node.filter((element) => this.interactive && element.id in this.blockedElements);
-    blocked.select('.node-shape').attr('fill', '#eceff3').attr('stroke', '#b42318').attr('stroke-dasharray', '5 4');
-    blocked.select('text').attr('fill', '#8a96a3');
+    blocked.select('.node-shape').attr('fill', '#f0eee6').attr('stroke', '#b42318').attr('stroke-dasharray', '5 4');
+    blocked.select('text').attr('fill', '#91908a');
     blocked.append('title').text((element) => `${element.id} is blocked: ${this.blockedElements[element.id]}`);
     // Drawn outside the dimmed node group so the label stays readable.
     svg.append('g')
@@ -530,7 +530,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('width', CONFIG_BLOCK_HALF_WIDTH * 2)
       .attr('rx', CONFIG_BLOCK_RADIUS)
       .attr('fill', '#ffffff')
-      .attr('stroke', '#235f7a');
+      .attr('stroke', '#c15f3c');
     const emitter = this.blockTraversalChanged;
     // Styles are inline or in an SVG-local sheet because Angular's scoped
     // component styles do not reach elements created by d3.
@@ -543,7 +543,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('width', CONFIG_BLOCK_HALF_WIDTH * 2 - 6)
       .attr('height', 24)
       .append('xhtml:div')
-      .attr('style', 'display:flex;align-items:center;gap:2px;height:100%;color:#17202a;font:800 13px sans-serif;');
+      .attr('style', 'display:flex;align-items:center;gap:2px;height:100%;color:#141413;font:800 13px sans-serif;');
     field.append('xhtml:input')
       .attr('class', 'traversal-input')
       .attr('title', (block) => `${block.id} traversal time in seconds`)
@@ -583,7 +583,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('orient', 'auto')
       .append('path')
       .attr('d', 'M0,-5L10,0L0,5')
-      .attr('fill', '#778999');
+      .attr('fill', '#91908a');
     defs.append('marker')
       .attr('id', 'arrow-selected')
       .attr('viewBox', '0 -5 10 10')
@@ -619,13 +619,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('width', (station) => station.width)
       .attr('height', (station) => station.height)
       .attr('rx', 8)
-      .attr('fill', '#edf2f6')
-      .attr('stroke', '#d3dde6')
+      .attr('fill', '#f0eee6')
+      .attr('stroke', '#e3e0d5')
       .attr('stroke-dasharray', '5 5');
     groups.append('text')
       .attr('x', (station) => station.x + 10)
       .attr('y', (station) => station.y + 18)
-      .attr('fill', '#657789')
+      .attr('fill', '#73726c')
       .attr('font-size', 12)
       .attr('font-weight', 800)
       .text((station) => station.id);
@@ -685,7 +685,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('x', -4)
       .attr('text-anchor', 'start')
       .attr('dominant-baseline', 'central')
-      .attr('fill', '#17202a')
+      .attr('fill', '#141413')
       .attr('font-size', 11)
       .attr('font-weight', 800)
       .text((vehicle) => vehicle.elementId);
@@ -738,12 +738,12 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       return '#ccebdd';
     }
     if (element.elementType === 'YARD') {
-      return '#dceff3';
+      return '#e3dacc';
     }
     if (element.elementType === 'PLATFORM') {
-      return '#e6edf5';
+      return '#f0eee6';
     }
-    return '#f0f4e9';
+    return '#ffffff';
   }
 
   private nodeStroke(
@@ -761,6 +761,6 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     if (selected.has(element.id)) {
       return '#13795b';
     }
-    return '#667889';
+    return '#73726c';
   }
 }
