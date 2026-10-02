@@ -294,4 +294,7 @@ One commit per finding, in this order:
 - F5 time-axis view: approved and implemented (Phase B)
 - F4: option A (Phase C)
 - F3: the minimal production-form scope was approved (Phase C)
-- frontend unit-test setup: still open; not part of the seven findings
+- frontend unit-test setup: added after the seven findings were closed.
+  Vitest covers `service-timing.ts`, `playback.ts`, `schedule-overview.ts`,
+  and `page-helpers.ts` (`66 passed`), so the F1 and F5 functions that had
+  browser verification only now have unit tests.

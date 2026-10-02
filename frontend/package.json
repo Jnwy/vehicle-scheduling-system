@@ -1,7 +1,8 @@
 {
   "scripts": {
     "start": "ng serve --host 0.0.0.0 --port 4200",
-    "build": "ng build"
+    "build": "ng build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@angular/common": "22.2.0",
@@ -20,6 +21,7 @@
     "@angular/cli": "22.2.0",
     "@angular/compiler-cli": "22.2.0",
     "@types/d3": "7.4.3",
-    "typescript": "6.0.2"
+    "typescript": "6.0.2",
+    "vitest": "5.0.3"
   }
 }

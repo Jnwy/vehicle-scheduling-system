@@ -1,0 +1,160 @@
+import { describe, expect, it } from 'vitest';
+
+import type { ScheduleAnalysis, ScheduleConflict, SimulationSegment, TopologyResponse } from './models';
+import { conflictsAt, playbackSliderPosition, scheduleRange, vehicleStatesAt } from './playback';
+
+const at = (seconds: number) => `2026-10-03T09:00:${String(seconds).padStart(2, '0')}+08:00`;
+const ms = (seconds: number) => Date.parse(at(seconds));
+
+const topology: TopologyResponse = {
+  elements: [
+    { id: 'Y', elementType: 'YARD', traversalSeconds: null, interlockingGroup: null },
+    { id: 'B1', elementType: 'BLOCK', traversalSeconds: 20, interlockingGroup: 'IG1' },
+    { id: 'P1A', elementType: 'PLATFORM', traversalSeconds: null, interlockingGroup: null },
+  ],
+  connections: [],
+};
+
+function segment(
+  elementId: string, start: number, end: number, batteryStart: number, batteryEnd: number,
+  overrides: Partial<SimulationSegment> = {},
+): SimulationSegment {
+  return {
+    segmentType: 'SERVICE', serviceId: 1, pathIndex: 0, elementId,
+    startTime: at(start), endTime: at(end), batteryStart, batteryEnd,
+    ...overrides,
+  };
+}
+
+function analysis(overrides: Partial<ScheduleAnalysis> = {}): ScheduleAnalysis {
+  return {
+    startTime: at(0),
+    endTime: at(50),
+    vehicles: [{
+      vehicleId: 'V1',
+      segments: [
+        segment('Y', 0, 0, 80, 80),
+        segment('B1', 0, 20, 80, 79),
+        segment('P1A', 20, 40, 79, 79),
+        segment('P1A', 40, 50, 79, 79, { segmentType: 'IDLE', serviceId: null, pathIndex: null }),
+      ],
+    }],
+    conflicts: [],
+    ...overrides,
+  };
+}
+
+describe('scheduleRange', () => {
+  it('returns the schedule bounds in milliseconds', () => {
+    expect(scheduleRange(analysis())).toEqual({ start: ms(0), end: ms(50) });
+  });
+
+  it('is null for an empty schedule', () => {
+    expect(scheduleRange(analysis({ startTime: null, endTime: null }))).toBeNull();
+  });
+});
+
+describe('vehicleStatesAt', () => {
+  it('returns nothing without a playback instant', () => {
+    expect(vehicleStatesAt(analysis(), topology, null)).toEqual([]);
+  });
+
+  it('interpolates position and battery inside a block', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(10));
+
+    expect(state).toEqual({
+      vehicleId: 'V1', serviceId: 1, elementId: 'B1', nextElementId: 'P1A', progress: 0.5, battery: 79.5,
+    });
+  });
+
+  it('prefers the non-empty segment over a zero-length one at the same instant', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(0));
+
+    expect(state.elementId).toBe('B1');
+    expect(state.progress).toBe(0);
+  });
+
+  it('keeps a vehicle still on a platform', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(30));
+
+    expect(state).toMatchObject({ elementId: 'P1A', nextElementId: 'P1A', progress: 0, battery: 79 });
+  });
+
+  it('uses half-open segments at a boundary', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(20));
+
+    expect(state.elementId).toBe('P1A');
+  });
+
+  it('reports an idle vehicle at its final location without a service', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(45));
+
+    expect(state).toMatchObject({ serviceId: null, elementId: 'P1A' });
+  });
+
+  it('still shows the vehicle at the exact end of its last segment', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(50));
+
+    expect(state.elementId).toBe('P1A');
+  });
+
+  it('omits a vehicle outside all of its segments', () => {
+    const late = analysis({
+      vehicles: [{ vehicleId: 'V2', segments: [segment('B1', 30, 50, 80, 79)] }],
+    });
+
+    expect(vehicleStatesAt(late, topology, ms(10))).toEqual([]);
+  });
+
+  it('shows a vehicle whose only segment is zero-length at that instant', () => {
+    const point = analysis({
+      vehicles: [{ vehicleId: 'V1', segments: [segment('Y', 5, 5, 80, 80)] }],
+    });
+
+    expect(vehicleStatesAt(point, topology, ms(5))).toHaveLength(1);
+    expect(vehicleStatesAt(point, topology, ms(6))).toEqual([]);
+  });
+});
+
+describe('conflictsAt', () => {
+  const conflict = (start: number, end: number): ScheduleConflict => ({
+    conflictType: 'BLOCK_OCCUPANCY', resourceId: 'B1', startTime: at(start), endTime: at(end),
+    vehicleIds: ['V1', 'V2'], serviceIds: [1, 2], elementIds: ['B1'], message: 'Block B1 is occupied by multiple vehicles.',
+  });
+
+  it('returns nothing without a playback instant', () => {
+    expect(conflictsAt(analysis({ conflicts: [conflict(10, 20)] }), null)).toEqual([]);
+  });
+
+  it('treats a conflict interval as half-open', () => {
+    const withConflict = analysis({ conflicts: [conflict(10, 20)] });
+
+    expect(conflictsAt(withConflict, ms(9))).toHaveLength(0);
+    expect(conflictsAt(withConflict, ms(10))).toHaveLength(1);
+    expect(conflictsAt(withConflict, ms(19))).toHaveLength(1);
+    expect(conflictsAt(withConflict, ms(20))).toHaveLength(0);
+  });
+
+  it('matches a zero-length conflict only at its instant', () => {
+    const withConflict = analysis({ conflicts: [conflict(10, 10)] });
+
+    expect(conflictsAt(withConflict, ms(10))).toHaveLength(1);
+    expect(conflictsAt(withConflict, ms(11))).toHaveLength(0);
+  });
+});
+
+describe('playbackSliderPosition', () => {
+  const range = { start: ms(0), end: ms(50) };
+
+  it('maps the instant onto a 0-1000 scale', () => {
+    expect(playbackSliderPosition(range, ms(0))).toBe(0);
+    expect(playbackSliderPosition(range, ms(25))).toBe(500);
+    expect(playbackSliderPosition(range, ms(50))).toBe(1000);
+  });
+
+  it('is zero when there is no range, no instant, or an empty range', () => {
+    expect(playbackSliderPosition(null, ms(10))).toBe(0);
+    expect(playbackSliderPosition(range, null)).toBe(0);
+    expect(playbackSliderPosition({ start: ms(5), end: ms(5) }, ms(5))).toBe(0);
+  });
+});

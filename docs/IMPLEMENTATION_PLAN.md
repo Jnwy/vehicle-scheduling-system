@@ -32,6 +32,7 @@ Last updated: 2026-10-02
 | Persistence (PostgreSQL, migration, seed) | Complete | Integration tests; startup on an empty database |
 | FastAPI service CRUD and block configuration | Complete | API, transaction, and concurrency tests |
 | Angular pages: Editor, Viewer, Block Configuration | Complete | Production build; headless browser checks |
+| Frontend unit tests (pure functions) | Complete | Vitest |
 | Bonus 1: conflict detection and battery analysis | Complete | Domain and API tests |
 | Bonus 2: interactive track map and playback | Complete | Headless browser checks |
 | Bonus 3: automatic schedule generation | Not implemented | Out of scope so far |
@@ -39,7 +40,8 @@ Last updated: 2026-10-02
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
 Last verified result of the full backend suite: `191 passed`, with one
-upstream Starlette/AnyIO deprecation warning.
+upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
+`66 passed`.
 
 ## How to Verify
 
@@ -51,6 +53,7 @@ dc up --build -d
 dc exec database createdb -U vehicle_scheduling fastapi_scheduling_test
 dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint alembic backend upgrade head
 dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
+dc run --rm --no-deps frontend npm test
 ```
 
 `createdb` is needed once per database volume. API tests commit transactions
@@ -93,13 +96,15 @@ index, not a second copy.
 | 2026-10-01 | Bonus 1 and Bonus 2 with review hardening | `144 passed`; desktop and 390 px browser checks |
 | 2026-10-02 | Mandatory interlocking exclusivity; three routed pages | `178 passed`; startup from a new volume |
 | 2026-10-02 | Review follow-ups F1-F7 | `191 passed`; production and development stacks checked in a headless browser, including the default ports from an empty volume |
+| 2026-10-02 | Frontend unit tests added | `66 passed` through the development override; three seeded logic mutations were each caught; production image builds without test files |
 
 ## Known Limitations
 
 - Bonus 3 (automatic schedule generation) is not implemented.
-- The frontend has no unit-test setup. `frontend/src/app/service-timing.ts`,
-  `schedule-overview.ts`, and `playback.ts` are pure functions verified only
-  through the browser.
+- Frontend unit tests cover pure functions only (`service-timing.ts`,
+  `playback.ts`, `schedule-overview.ts`, `page-helpers.ts`). Components,
+  templates, and the d3 track map are verified only through the browser, and
+  the browser checks are not automated in the repository.
 - A vehicle has no position before its first service, because the model has
   no initial vehicle location.
 - One global advisory lock serializes every schedule and configuration write.
@@ -107,10 +112,8 @@ index, not a second copy.
 
 ## Next Concrete Action
 
-No milestone is in progress. Candidates, each needing a user decision:
-
-1. Add a frontend unit-test setup and cover the three pure-function modules.
-2. Implement Bonus 3.
+No milestone is in progress. The remaining candidate, which needs a user
+decision, is Bonus 3 (automatic schedule generation).
 
 ## Cross-Machine Handoff
 

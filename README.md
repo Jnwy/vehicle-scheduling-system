@@ -141,6 +141,15 @@ database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
 Last verified result: **191 passed**.
 
+Run the frontend unit tests in the frontend container:
+
+```bash
+dc run --rm --no-deps frontend npm test
+```
+
+They cover the frontend's pure functions with Vitest and need no browser or
+backend. Last verified result: **66 passed**.
+
 ---
 
 ## Implemented Scope
@@ -656,6 +665,17 @@ It also covers:
 Targeted tests cover mandatory interlocking exclusivity, touching intervals,
 create/update rollback, and concurrent cross-vehicle writes. General block
 occupancy and battery reports remain separate Bonus behavior.
+
+The frontend keeps its calculations in pure functions, tested with Vitest:
+
+- platform timing derivation from start time, block times, and dwell
+- detection of a saved timeline that is stale after a block change
+- playback position, battery interpolation, and active conflicts at an instant
+- Schedule Viewer grouping, time ordering, and time-axis placement
+- datetime and API error formatting
+
+Components, templates, and the d3 track map have no unit tests; they are
+checked through the browser.
 
 ---
 
