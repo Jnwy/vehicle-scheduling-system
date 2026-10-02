@@ -143,6 +143,10 @@ small {
   border-top: 4px solid #13795b;
 }
 
+.map-form {
+  margin-top: 16px;
+}
+
 .map-header {
   margin-bottom: 14px;
 }
@@ -525,9 +529,25 @@ select:focus {
   gap: 12px;
 }
 
+/* Who runs and when: chosen before the path, so it sits above the map. */
+.service-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.service-setup > label {
+  width: 140px;
+}
+
 .start-time {
   display: grid;
   gap: 6px;
+  color: #435466;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* The start time reads as one timestamp literal; each part is its own dropdown. */

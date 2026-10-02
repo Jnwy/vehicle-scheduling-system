@@ -11,12 +11,55 @@
 <section class="panel map-panel">
   <div class="section-header map-header">
     <div>
-      <h2>Path editor map</h2>
+      <h2>{{ editingServiceId() === null ? 'Create service' : 'Update service #' + editingServiceId() }}</h2>
       @if (pathSelection().length === 0) {
-        <p>Choose the platform or yard where the service starts.</p>
+        <p>Pick a vehicle and start time, then choose the platform or yard where the service starts.</p>
       } @else {
-        <p>Click the next platform or yard; the blocks on the way are added to the path.</p>
+        <p>Pick a vehicle and start time, then click the next platform or yard; the blocks on the way are added to the path.</p>
       }
+    </div>
+    @if (editingServiceId() !== null) {
+      <button type="button" class="secondary" [disabled]="isBusy()" (click)="cancelEdit()">
+        Cancel edit
+      </button>
+    }
+  </div>
+
+  <div class="service-setup">
+    <label>
+      Vehicle
+      <select name="vehicleId" required [disabled]="isBusy()" [ngModel]="serviceForm.vehicleId" (ngModelChange)="onVehicleChange($event)">
+        <option value="" disabled>Select vehicle</option>
+        @for (vehicle of vehicles(); track vehicle.id) {
+          <option [value]="vehicle.id">{{ vehicle.id }}</option>
+        }
+      </select>
+    </label>
+
+    <div class="start-time">
+      <span>Start time (Taipei)</span>
+      <div class="start-parts">
+        <!-- One timestamp, one dropdown per part. Options the vehicle is busy for throughout are disabled. -->
+        @for (field of startFields; track field.key) {
+          @if (field.separator) {
+            <span class="start-separator" aria-hidden="true">{{ field.separator }}</span>
+          }
+          <select
+            required
+            [name]="'start-' + field.key"
+            [attr.aria-label]="field.label"
+            [disabled]="isBusy()"
+            [ngModel]="startParts[field.key]"
+            (ngModelChange)="onStartPartChange(field.key, $event)"
+            >
+            @for (value of startFieldValues(field.key); track value) {
+              <option [ngValue]="value" [disabled]="isBusyOption(field.key, value)">
+                {{ value < 10 ? '0' + value : value }}
+              </option>
+            }
+          </select>
+        }
+      </div>
     </div>
   </div>
 
@@ -53,167 +96,116 @@
     mapPurpose="editor"
     (elementSelected)="selectPathElement($event)"
     />
+
+  <form class="map-form" (ngSubmit)="submitService()">
+    <fieldset class="service-form" [disabled]="isBusy()">
+      @if (blockers().length > 0) {
+        <div class="blockers" role="alert">
+          <strong>This service would be rejected:</strong>
+          <ul>
+            @for (blocker of blockers(); track $index) {
+              <li>{{ blocker }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (serviceForm.vehicleId) {
+        <div class="vehicle-slots">
+          <h3>{{ serviceForm.vehicleId }} availability</h3>
+          @for (slot of vehicleSlots; track $index) {
+            @if (slot.kind === 'busy') {
+              <div class="slot busy">
+                <span class="slot-tag">BUSY</span>
+                <span>{{ slotTime(slot.start!) }} → {{ slotTime(slot.end!) }}</span>
+                <span>service #{{ slot.serviceId }} · {{ slot.elementId }} -> {{ slot.nextElementId }}</span>
+              </div>
+            } @else {
+              <div class="slot free">
+                <span class="slot-tag">FREE</span>
+                <span>
+                  @if (slot.start === null && slot.end === null) {
+                    any time
+                  } @else if (slot.start === null) {
+                    … → {{ slotTime(slot.end!) }}
+                  } @else if (slot.end === null) {
+                    {{ slotTime(slot.start) }} → …
+                  } @else {
+                    {{ slotTime(slot.start) }} → {{ slotTime(slot.end) }}
+                  }
+                </span>
+                <span>
+                  starts at <strong>{{ slot.elementId ?? 'Y' }}</strong>@if (slot.nextElementId) {<em> · must end at {{ slot.nextElementId }}</em>}
+                </span>
+                @if (slot.start !== null) {
+                  <button type="button" class="secondary small" (click)="useFreeSlot(slot)">Use</button>
+                }
+              </div>
+            }
+          }
+        </div>
+      }
+
+      <div class="timing-header">
+        <h3>Platform timings</h3>
+      </div>
+
+      @if (timingError()) {
+        <div class="notice error" role="alert">
+          {{ timingError() }}
+          @if (missingBlockIds().length > 0) {
+            <a routerLink="/blocks">Block Configuration</a>
+          }
+        </div>
+      }
+
+      @if (serviceForm.platformTimings.length === 0) {
+        <div class="empty muted">
+          No platform timing rows.
+        </div>
+      }
+
+      @for (timing of serviceForm.platformTimings; track $index; let index = $index) {
+        <div class="timing-row dwell-row">
+          <div>
+            <strong>{{ timing.platformId }}</strong>
+            <small>Path index {{ timing.pathIndex }}</small>
+          </div>
+          <label>
+            Dwell seconds
+            <input
+              type="number"
+              min="0"
+              step="any"
+              [name]="'dwell-' + index"
+              [ngModel]="timing.dwellSeconds"
+              (ngModelChange)="setDwellSeconds(timing, $event)"
+              required
+              />
+          </label>
+          <div>
+            <small>Arrival</small>
+            <span>{{ timing.arrivalTime ? formatForDisplay(timing.arrivalTime) : '-' }}</span>
+          </div>
+          <div>
+            <small>Departure</small>
+            <span>{{ timing.departureTime ? formatForDisplay(timing.departureTime) : '-' }}</span>
+          </div>
+        </div>
+      }
+
+      <div class="form-actions">
+        <button type="submit" [disabled]="isBusy() || !!timingError() || blockers().length > 0">
+          {{ savingService() ? 'Saving' : editingServiceId() === null ? 'Create service' : 'Update service' }}
+        </button>
+        <button type="button" class="secondary" (click)="resetForm()">Reset</button>
+      </div>
+    </fieldset>
+  </form>
 </section>
 
 <section class="layout editor-layout">
   <div class="right-column">
-    <section class="panel form-panel">
-      <div class="section-header">
-        <div>
-          <h2>{{ editingServiceId() === null ? 'Create service' : 'Update service #' + editingServiceId() }}</h2>
-          <p>Use a complete ordered path; the backend validates direction and schedule rules.</p>
-        </div>
-        @if (editingServiceId() !== null) {
-          <button type="button" class="secondary" [disabled]="isBusy()" (click)="cancelEdit()">
-            Cancel edit
-          </button>
-        }
-      </div>
-
-      <form (ngSubmit)="submitService()">
-        <fieldset class="service-form" [disabled]="isBusy()">
-          <div class="form-grid">
-            <label>
-              Vehicle
-              <select name="vehicleId" required [ngModel]="serviceForm.vehicleId" (ngModelChange)="onVehicleChange($event)">
-                <option value="" disabled>Select vehicle</option>
-                @for (vehicle of vehicles(); track vehicle.id) {
-                  <option [value]="vehicle.id">{{ vehicle.id }}</option>
-                }
-              </select>
-            </label>
-
-            <div class="start-time">
-              <span>Start time (Taipei)</span>
-              <div class="start-parts">
-                <!-- One timestamp, one dropdown per part. Options the vehicle is busy for throughout are disabled. -->
-                @for (field of startFields; track field.key) {
-                  @if (field.separator) {
-                    <span class="start-separator" aria-hidden="true">{{ field.separator }}</span>
-                  }
-                  <select
-                    required
-                    [name]="'start-' + field.key"
-                    [attr.aria-label]="field.label"
-                    [ngModel]="startParts[field.key]"
-                    (ngModelChange)="onStartPartChange(field.key, $event)"
-                    >
-                    @for (value of startFieldValues(field.key); track value) {
-                      <option [ngValue]="value" [disabled]="isBusyOption(field.key, value)">
-                        {{ value < 10 ? '0' + value : value }}
-                      </option>
-                    }
-                  </select>
-                }
-              </div>
-            </div>
-          </div>
-
-          @if (blockers().length > 0) {
-            <div class="blockers" role="alert">
-              <strong>This service would be rejected:</strong>
-              <ul>
-                @for (blocker of blockers(); track $index) {
-                  <li>{{ blocker }}</li>
-                }
-              </ul>
-            </div>
-          }
-
-          @if (serviceForm.vehicleId) {
-            <div class="vehicle-slots">
-              <h3>{{ serviceForm.vehicleId }} availability</h3>
-              @for (slot of vehicleSlots; track $index) {
-                @if (slot.kind === 'busy') {
-                  <div class="slot busy">
-                    <span class="slot-tag">BUSY</span>
-                    <span>{{ slotTime(slot.start!) }} → {{ slotTime(slot.end!) }}</span>
-                    <span>service #{{ slot.serviceId }} · {{ slot.elementId }} -> {{ slot.nextElementId }}</span>
-                  </div>
-                } @else {
-                  <div class="slot free">
-                    <span class="slot-tag">FREE</span>
-                    <span>
-                      @if (slot.start === null && slot.end === null) {
-                        any time
-                      } @else if (slot.start === null) {
-                        … → {{ slotTime(slot.end!) }}
-                      } @else if (slot.end === null) {
-                        {{ slotTime(slot.start) }} → …
-                      } @else {
-                        {{ slotTime(slot.start) }} → {{ slotTime(slot.end) }}
-                      }
-                    </span>
-                    <span>
-                      starts at <strong>{{ slot.elementId ?? 'Y' }}</strong>@if (slot.nextElementId) {<em> · must end at {{ slot.nextElementId }}</em>}
-                    </span>
-                    @if (slot.start !== null) {
-                      <button type="button" class="secondary small" (click)="useFreeSlot(slot)">Use</button>
-                    }
-                  </div>
-                }
-              }
-            </div>
-          }
-
-          <div class="timing-header">
-            <h3>Platform timings</h3>
-          </div>
-
-          @if (timingError()) {
-            <div class="notice error" role="alert">
-              {{ timingError() }}
-              @if (missingBlockIds().length > 0) {
-                <a routerLink="/blocks">Block Configuration</a>
-              }
-            </div>
-          }
-
-          @if (serviceForm.platformTimings.length === 0) {
-            <div class="empty muted">
-              No platform timing rows.
-            </div>
-          }
-
-          @for (timing of serviceForm.platformTimings; track $index; let index = $index) {
-            <div class="timing-row dwell-row">
-              <div>
-                <strong>{{ timing.platformId }}</strong>
-                <small>Path index {{ timing.pathIndex }}</small>
-              </div>
-              <label>
-                Dwell seconds
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  [name]="'dwell-' + index"
-                  [ngModel]="timing.dwellSeconds"
-                  (ngModelChange)="setDwellSeconds(timing, $event)"
-                  required
-                  />
-              </label>
-              <div>
-                <small>Arrival</small>
-                <span>{{ timing.arrivalTime ? formatForDisplay(timing.arrivalTime) : '-' }}</span>
-              </div>
-              <div>
-                <small>Departure</small>
-                <span>{{ timing.departureTime ? formatForDisplay(timing.departureTime) : '-' }}</span>
-              </div>
-            </div>
-          }
-
-          <div class="form-actions">
-            <button type="submit" [disabled]="isBusy() || !!timingError() || blockers().length > 0">
-              {{ savingService() ? 'Saving' : editingServiceId() === null ? 'Create service' : 'Update service' }}
-            </button>
-            <button type="button" class="secondary" (click)="resetForm()">Reset</button>
-          </div>
-        </fieldset>
-      </form>
-    </section>
-
     <section class="panel">
       <div class="section-header">
         <div>
