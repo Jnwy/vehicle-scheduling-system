@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TopologyResponse, TrackElementResponse } from './models';
 import {
-  ScheduleWindow, blockedNextElements, candidateTimeline, deletionProblem, interlockingConflicts, pathEndpointProblems,
+  ScheduleWindow, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart, interlockingConflicts,
+  pathEndpointProblems,
   savedWindow,
   vehicleProblems,
 } from './service-conflicts';
@@ -203,5 +204,83 @@ describe('pathEndpointProblems', () => {
   it('has nothing to say about an empty path or a lone yard', () => {
     expect(pathEndpointProblems([], elements)).toEqual([]);
     expect(pathEndpointProblems(['Y'], elements)).toEqual([]);
+  });
+});
+
+describe('earliestOpenStart', () => {
+  // Y -> B1 -> P1A and Y -> B2 -> P1B; B1 and B2 share IG1, each taking 20 seconds.
+  const yard = (groupOfB2: string | null): TopologyResponse => ({
+    elements: [
+      { id: 'Y', elementType: 'YARD', traversalSeconds: null, interlockingGroup: null },
+      { id: 'P1A', elementType: 'PLATFORM', traversalSeconds: null, interlockingGroup: null },
+      { id: 'P1B', elementType: 'PLATFORM', traversalSeconds: null, interlockingGroup: null },
+      block('B1', 'IG1'), block('B2', groupOfB2),
+    ],
+    connections: [
+      { fromElementId: 'Y', toElementId: 'B1' },
+      { fromElementId: 'B1', toElementId: 'P1A' },
+      { fromElementId: 'Y', toElementId: 'B2' },
+      { fromElementId: 'B2', toElementId: 'P1B' },
+    ],
+  });
+  const v1OnB1 = saved(1, 'V1', [['Y', '08:00:00', '08:00:00'], ['B1', '08:00:00', '08:00:20'], ['P1A', '08:00:20', '08:01:20']]);
+
+  it('keeps the start when nothing is held', () => {
+    expect(earliestOpenStart('Y', at('08:00:00'), 'V2', [], yard('IG1')))
+      .toEqual({ start: at('08:00:00'), avoided: null });
+  });
+
+  it('keeps the start when one way out is still open', () => {
+    expect(earliestOpenStart('Y', at('08:00:00'), 'V2', [v1OnB1], yard(null)))
+      .toEqual({ start: at('08:00:00'), avoided: null });
+  });
+
+  it('moves to the end of the hold when every way out is held', () => {
+    const open = earliestOpenStart('Y', at('08:00:05'), 'V2', [v1OnB1], yard('IG1'));
+
+    expect(open.start).toBe(at('08:00:20'));
+    expect(open.avoided).toMatchObject({ vehicleId: 'V1', serviceId: 1, group: 'IG1', end: at('08:00:20') });
+  });
+
+  it('moves a start whose traversal would run into a hold that begins later', () => {
+    // 07:59:50 + 20s runs into V1's hold from 08:00:00, so it is moved as well.
+    expect(earliestOpenStart('Y', at('07:59:50'), 'V2', [v1OnB1], yard('IG1')).start).toBe(at('08:00:20'));
+  });
+
+  it('moves past consecutive holds', () => {
+    const v3OnB2 = saved(2, 'V3', [['Y', '08:00:15', '08:00:15'], ['B2', '08:00:15', '08:00:35'], ['P1B', '08:00:35', '08:01:35']]);
+    const open = earliestOpenStart('Y', at('08:00:00'), 'V2', [v1OnB1, v3OnB2], yard('IG1'));
+
+    expect(open.start).toBe(at('08:00:35'));
+    expect(open.avoided).toMatchObject({ serviceId: 1 });
+  });
+
+  it('accounts for a held block later on the way to the stop', () => {
+    // Y -> B1 -> B3 -> P1A: only B3 is grouped and V1 holds it until 08:00:50.
+    const chained: TopologyResponse = {
+      elements: [
+        { id: 'Y', elementType: 'YARD', traversalSeconds: null, interlockingGroup: null },
+        { id: 'P1A', elementType: 'PLATFORM', traversalSeconds: null, interlockingGroup: null },
+        block('B1', null), block('B3', 'IG1'),
+      ],
+      connections: [
+        { fromElementId: 'Y', toElementId: 'B1' },
+        { fromElementId: 'B1', toElementId: 'B3' },
+        { fromElementId: 'B3', toElementId: 'P1A' },
+      ],
+    };
+    const v1OnB3 = saved(1, 'V1', [['P1A', '08:00:00', '08:00:30'], ['B3', '08:00:30', '08:00:50']]);
+
+    // B1 takes 20s, so leaving at 08:00:30 reaches B3 exactly as it is released.
+    expect(earliestOpenStart('Y', at('08:00:15'), 'V2', [v1OnB3], chained).start).toBe(at('08:00:30'));
+  });
+
+  it('never moves a vehicle for its own services', () => {
+    expect(earliestOpenStart('Y', at('08:00:05'), 'V1', [v1OnB1], yard('IG1')).start).toBe(at('08:00:05'));
+  });
+
+  it('keeps the start when the element has no way out', () => {
+    expect(earliestOpenStart('P1A', at('08:00:05'), 'V2', [v1OnB1], yard('IG1')))
+      .toEqual({ start: at('08:00:05'), avoided: null });
   });
 });

@@ -141,6 +141,65 @@ export function blockedNextElements(
   return blocked;
 }
 
+export interface OpenStart {
+  start: number;
+  // The first interlocking hold the start was moved past, if it was moved.
+  avoided: InterlockingConflict | null;
+}
+
+// The earliest instant at or after `earliest` from which at least one next
+// click out of `startElementId` is not held by another vehicle. The path is
+// not chosen yet, so this only promises that the first step is open; later
+// steps are still previewed as the path is built.
+export function earliestOpenStart(
+  startElementId: string,
+  earliest: number,
+  vehicleId: string,
+  services: SavedService[],
+  topology: TopologyResponse,
+): OpenStart {
+  const groupByBlock = interlockingGroups(topology.elements);
+  const byId = new Map(topology.elements.map((element) => [element.id, element]));
+  const routes = [...nextPathSteps([startElementId], topology).values()];
+  let start = earliest;
+  let avoided: InterlockingConflict | null = null;
+  // Every pass moves the start past at least one saved interval, so the number
+  // of saved intervals bounds the search.
+  const maxPasses = services.reduce((count, service) => count + service.timeline.length, 0);
+  for (let pass = 0; pass <= maxPasses; pass += 1) {
+    // For each route, the start at which its first held block would be free.
+    const releases: { at: number; conflict: InterlockingConflict }[] = [];
+    for (const steps of routes) {
+      let cursor = start;
+      let release: { at: number; conflict: InterlockingConflict } | null = null;
+      for (const stepId of steps) {
+        const element = byId.get(stepId);
+        if (element?.elementType !== 'BLOCK' || element.traversalSeconds === null) {
+          break;
+        }
+        const interval = { pathIndex: 0, elementId: stepId, start: cursor, end: cursor + element.traversalSeconds * 1000 };
+        const conflict = interlockingConflict(interval, vehicleId, services, groupByBlock, null);
+        if (conflict !== null) {
+          release = { at: conflict.end - (cursor - start), conflict };
+          break;
+        }
+        cursor = interval.end;
+      }
+      if (release === null) {
+        return { start, avoided };
+      }
+      releases.push(release);
+    }
+    if (releases.length === 0) {
+      return { start, avoided };
+    }
+    const next = releases.reduce((soonest, release) => release.at < soonest.at ? release : soonest);
+    avoided ??= next.conflict;
+    start = next.at;
+  }
+  return { start, avoided };
+}
+
 // One service as the vehicle rules see it: a time window and its two end locations.
 export interface ScheduleWindow {
   // null for a service that has not been saved yet.

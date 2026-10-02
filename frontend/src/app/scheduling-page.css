@@ -881,3 +881,8 @@ fieldset {
   margin: 0;
   min-width: 0;
 }
+
+.start-moved {
+  color: #72510d;
+  font-weight: 600;
+}

@@ -11,7 +11,8 @@ import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } fr
 import { nextPathSteps, withoutLastStep } from './path-steps';
 import { TrackMapComponent } from './track-map.component';
 import {
-  ScheduleWindow, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, interlockingConflicts,
+  ScheduleWindow, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart,
+  interlockingConflicts,
   pathEndpointProblems, savedWindow, vehicleProblems,
 } from './service-conflicts';
 import {
@@ -227,11 +228,33 @@ export class ScheduleEditorComponent implements OnInit {
     }
   }
 
-  // A new service continues from where and when the vehicle's latest service ended.
+  // A new service continues from where and when the vehicle's latest service
+  // ended, moved later if another vehicle holds every way out at that time.
   private startFromVehicleEnd(): void {
-    const continuation = vehicleContinuation(this.services(), this.serviceForm.vehicleId);
-    this.setStartTime(continuation?.startTime ?? nextStartTime());
-    this.setPathSelection([continuation?.elementId ?? 'Y']);
+    const vehicleId = this.serviceForm.vehicleId;
+    const continuation = vehicleContinuation(this.services(), vehicleId);
+    const elementId = continuation?.elementId ?? 'Y';
+    const earliest = Date.parse(`${continuation?.startTime ?? nextStartTime()}+08:00`);
+    const open = earliestOpenStart(elementId, earliest, vehicleId, this.services(), this.topology());
+    const startTime = taipeiLocal(open.start);
+    this.startMove = open.avoided === null ? null : {
+      startTime,
+      message: `Start moved from ${this.slotTime(earliest)} to ${this.slotTime(open.start)}: `
+        + `${open.avoided.vehicleId} service #${open.avoided.serviceId} holds interlocking group `
+        + `${open.avoided.group} on every way out of ${elementId} before then.`,
+    };
+    this.setStartTime(startTime);
+    this.setPathSelection([elementId]);
+  }
+
+  private startMove: { startTime: string; message: string } | null = null;
+
+  // Shown only while the form still holds the start time that was moved.
+  get startMovedNote(): string {
+    return this.startMove !== null && this.editingServiceId() === null
+      && this.startMove.startTime === this.serviceForm.startTime
+      ? this.startMove.message
+      : '';
   }
 
   private setStartTime(value: string): void {
