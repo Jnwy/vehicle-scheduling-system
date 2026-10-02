@@ -16,14 +16,10 @@ services:
   backend:
     build:
       context: ./backend
-    command: /app/start.sh
     environment:
       DATABASE_URL: postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/vehicle_scheduling
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/tests:/app/tests
     depends_on:
       database:
         condition: service_healthy
@@ -31,11 +27,8 @@ services:
   frontend:
     build:
       context: ./frontend
-    command: npm start -- --poll 1000
     ports:
-      - "4200:4200"
-    volumes:
-      - ./frontend/src:/app/src
+      - "4200:80"
     depends_on:
       - backend
 

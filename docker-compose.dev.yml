@@ -1,0 +1,19 @@
+# Development override: live reload, mounted sources, and backend test tools.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  backend:
+    build:
+      args:
+        REQUIREMENTS_FILE: requirements-dev.txt
+    command: /app/start.sh --reload
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+
+  frontend:
+    build:
+      target: build
+    # Port 80 matches the production container so the published port is unchanged.
+    command: npx ng serve --host 0.0.0.0 --port 80 --poll 1000 --proxy-config proxy.conf.json
+    volumes:
+      - ./frontend/src:/app/src

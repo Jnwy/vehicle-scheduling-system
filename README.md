@@ -76,6 +76,11 @@ docker compose up -d
 The frontend is available at `http://localhost:4200`, and the backend health
 endpoint is available at `http://localhost:8000/health`.
 
+The frontend container serves the Angular production build with nginx and
+forwards `/api/` to the backend, so the browser uses a single origin. The
+backend container runs uvicorn without reload and contains only runtime
+dependencies.
+
 Backend startup applies pending Alembic migrations and runs an idempotent seed
 for the fixed topology and vehicles `V1`/`V2`. Seed execution does not overwrite
 configured block traversal times. Seeded blocks B1-B14 default to 20 seconds;
@@ -83,24 +88,36 @@ existing null values are filled with 20. This is a project product default,
 not a duration supplied by the assignment. Block updates require a non-negative
 integer and cannot clear the value.
 
-Backend application and test files, and frontend source files, are mounted into
-their containers. FastAPI reloads when backend application code changes, and
-Angular rebuilds when frontend source code changes. Rebuild the relevant image
-after changing dependencies, a Dockerfile, or build configuration:
+### Development Mode
+
+`docker-compose.dev.yml` is an override for development. It mounts backend
+application and test files and frontend source files, reloads FastAPI and
+rebuilds Angular on change, and installs the backend test tools:
 
 ```bash
-docker compose up --build -d backend
-docker compose up --build -d frontend
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
+
+The URLs are the same as above. Rebuild after changing dependencies, a
+Dockerfile, or build configuration. Rebuild with plain `docker compose up
+--build` to return to the production form.
 
 ---
 
 ## Running Tests
 
+The test tools are only in the development image, so the commands below use
+the development override. Define a shorthand first:
+
+```bash
+alias dc='docker compose -f docker-compose.yml -f docker-compose.dev.yml'
+dc up --build -d
+```
+
 Run domain tests inside the running backend container:
 
 ```bash
-docker compose exec backend python -m pytest tests/test_path_validation.py tests/test_timeline.py tests/test_vehicle_schedule.py tests/test_service_update.py
+dc exec backend python -m pytest tests/test_path_validation.py tests/test_timeline.py tests/test_vehicle_schedule.py tests/test_service_update.py
 ```
 
 Because the tests directory is mounted into the container, test-only changes do
@@ -109,20 +126,20 @@ not require rebuilding the backend image.
 For the complete suite, create and migrate an independent test database once:
 
 ```bash
-docker compose exec database createdb -U vehicle_scheduling fastapi_scheduling_test
-docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint alembic backend upgrade head
+dc exec database createdb -U vehicle_scheduling fastapi_scheduling_test
+dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint alembic backend upgrade head
 ```
 
 Then run all domain, PostgreSQL, API, and concurrency tests:
 
 ```bash
-docker compose run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
+dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:vehicle_scheduling@database:5432/fastapi_scheduling_test --entrypoint python backend -m pytest tests -q
 ```
 
 API tests commit transactions and clear services in the designated test
 database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
-Last verified result: **186 passed**.
+Last verified result: **191 passed**.
 
 ---
 

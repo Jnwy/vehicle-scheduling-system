@@ -20,7 +20,7 @@ export function fromDatetimeLocal(value: string): string {
 
 export function formatApiError(error: HttpErrorResponse): string {
   if (error.status === 0) {
-    return 'Connection error. Confirm the FastAPI backend is running at http://localhost:8000.';
+    return 'Connection error. Confirm the backend container is running.';
   }
 
   const detail = error.error?.detail;

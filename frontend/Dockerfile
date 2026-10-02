@@ -1,4 +1,4 @@
-FROM node:24-slim
+FROM node:24-slim AS build
 
 WORKDIR /app
 
@@ -6,7 +6,11 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+RUN npm run build
 
-EXPOSE 4200
+FROM nginx:1.29-alpine
 
-CMD ["npm", "start"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist/vehicle-scheduling-frontend/browser /usr/share/nginx/html
+
+EXPOSE 80

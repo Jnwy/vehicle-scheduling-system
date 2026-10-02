@@ -6,7 +6,8 @@ import {
   TopologyResponse, VehicleResponse,
 } from './models';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Same-origin path; nginx (or the dev-server proxy) forwards it to the backend.
+const API_BASE_URL = '/api';
 
 @Injectable({ providedIn: 'root' })
 export class SchedulingApi {
