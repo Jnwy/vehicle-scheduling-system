@@ -12,7 +12,9 @@ before any commit.
 | F2 | Fixed in `110afae` |
 | F5 | Fixed in `304093e` |
 | F6 | Fixed in `267704a` |
-| F3, F4, F7 | Open |
+| F3 | Fixed in `ef8b6d3` |
+| F4 | Fixed in `bf7d5ae` |
+| F7 | Open |
 
 ## Verification Baseline
 
@@ -25,7 +27,8 @@ State of `2d1fe00` when the findings were recorded:
 - headless Chrome walkthrough of `/editor`, `/schedule`, and `/blocks` against
   an isolated backend: create, the three 409 rejections, the shared-block
   Bonus warning, playback, block save, and delete behaved as expected
-- not run: the whole Compose stack from an empty volume
+- not run at the time: the whole Compose stack from an empty volume (done in
+  Phase C)
 
 ## Findings
 
@@ -62,6 +65,7 @@ and `formatErrorDetail` in `frontend/src/app/page-helpers.ts` prints
 ### F3 — Docker images run development servers
 
 Severity: medium for delivery quality; the single-command requirement is met.
+Fixed in `ef8b6d3`.
 
 - backend runs `uvicorn --reload` (`backend/start.sh`)
 - frontend runs `ng serve` (`frontend/Dockerfile`, `docker-compose.yml`)
@@ -72,7 +76,7 @@ Severity: medium for delivery quality; the single-command requirement is met.
 
 ### F4 — A zero-duration service can sit inside another service of the same vehicle
 
-Severity: low. Confirmed with the domain functions.
+Severity: low. Confirmed with the domain functions. Fixed in `bf7d5ae`.
 
 `occupancies_overlap` returns `False` whenever either interval is empty, and
 the enclosing service is neither predecessor nor successor of the candidate.
@@ -221,6 +225,31 @@ advanced multi-stage optimization unless requested. Proposed minimal scope:
    development workflow in the README still works.
 4. Verify with `docker compose up --build` from an empty volume. This also
    closes the item left unverified in the baseline above.
+
+Phase C result (2026-10-02):
+
+- F4: option A was chosen. Vehicle validation rejects a zero-duration service
+  at an instant strictly inside another service of the same vehicle, in
+  either creation order. `occupancies_overlap` is unchanged, so interlocking
+  and block occupancy keep the empty-interval rule, and two zero-duration
+  services at the same instant are still allowed. Five tests added;
+  `docs/DOMAIN_RULES.md` section 6 updated.
+- F3: the minimal scope was approved. The frontend image serves the Angular
+  production build with nginx and forwards `/api/` to the backend; the
+  frontend calls `/api` on its own origin. The backend image has runtime
+  dependencies only and starts without reload. `docker-compose.dev.yml`
+  restores live reload, mounted sources, and the test tools. Frontend image
+  size went from 596 MB to 62 MB.
+- Verification: full backend suite `191 passed`, run with the commands now in
+  the README. The default stack was built and started from an empty volume
+  under a separate project name: migration and seed ran, `/api/health`
+  answered through nginx, `/schedule` loaded as a deep link, and a headless
+  Chrome check created a service, got a 409 for an overlap, and saved a block
+  time. The same browser check passed against the development override, with
+  the backend reloader and Angular watch mode active.
+- Not verified: the published ports 8000 and 4200 themselves, because the
+  check used alternate host ports beside a running stack. The port mapping in
+  `docker-compose.yml` is the only difference.
 
 ### Phase D — Documentation cleanup (F7)
 

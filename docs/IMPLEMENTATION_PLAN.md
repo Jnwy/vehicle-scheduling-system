@@ -66,17 +66,19 @@ dd455c6 docs: separate mandatory rules from bonus conflicts
 A full review of `main` at `2d1fe00` recorded seven findings (F1-F7) and a
 phased fix plan in [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md).
 
-Phase A is merged into `main`: F2 (`110afae`, user-readable error messages)
-and F1 (`c50754e`, stale platform timings on edit).
+Phases A and B are merged into `main`: F2 (`110afae`), F1 (`c50754e`), F6
+(`267704a`), and F5 (`304093e`).
 
-Phase B is done on branch `worktree-review-findings-plan` and not yet merged
-into `main`: F6 (`267704a`, trailing idle segment keeps vehicles on the map)
-and F5 (`304093e`, viewer grouped by vehicle with a time axis). Full backend
-suite: `186 passed`.
+Phase C is done on branch `worktree-review-findings-plan` and not yet merged
+into `main`: F4 (`bf7d5ae`, zero-duration service inside another service is
+rejected) and F3 (`ef8b6d3`, production-form Docker images with a development
+override). Full backend suite: `191 passed`.
 
-Next action: merge Phase B after user review, then resolve the open decisions
-in that document before Phase C (F4 zero-duration rule, F3 Docker delivery
-form). Phase D (F7 documentation cleanup) comes last. This
+Development and test commands now need the override file:
+`docker compose -f docker-compose.yml -f docker-compose.dev.yml ...`.
+
+Next action: merge Phase C after user review, then Phase D (F7 documentation
+cleanup), which needs user authorization. This
 supersedes the older "Next Concrete Action" section below.
 
 ## Active Handoff: Integration Recovery (2026-10-02)
