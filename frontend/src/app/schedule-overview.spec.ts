@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ScheduleAnalysis, ScheduleConflict, ServiceResponse } from './models';
-import { buildVehicleOverviews, serviceEndTime } from './schedule-overview';
+import { buildVehicleOverviews, pathStripSegments, serviceEndTime, servicePositions } from './schedule-overview';
 
 const at = (seconds: number) => `2026-10-03T09:${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}+08:00`;
 
@@ -133,5 +133,48 @@ describe('buildVehicleOverviews', () => {
     buildVehicleOverviews(services, analysis());
 
     expect(services.map((item) => item.id)).toEqual([1, 2]);
+  });
+});
+
+describe('servicePositions', () => {
+  it('places each service between the earliest start and the latest end', () => {
+    const positions = servicePositions([service(1, 'V1', 0, 40), service(2, 'V2', 50, 100)]);
+
+    expect(positions.get(1)).toEqual({ leftPercent: 0, widthPercent: 40 });
+    expect(positions.get(2)).toEqual({ leftPercent: 50, widthPercent: 50 });
+  });
+
+  it('measures from the earliest start, not from the first service listed', () => {
+    const positions = servicePositions([service(1, 'V1', 60, 100), service(2, 'V2', 20, 40)]);
+
+    expect(positions.get(1)).toEqual({ leftPercent: 50, widthPercent: 50 });
+    expect(positions.get(2)).toEqual({ leftPercent: 0, widthPercent: 25 });
+  });
+
+  it('gives a zero-duration service a position without a width', () => {
+    const positions = servicePositions([service(1, 'V1', 0, 100), service(2, 'V2', 50, 50)]);
+
+    expect(positions.get(2)).toEqual({ leftPercent: 50, widthPercent: 0 });
+  });
+
+  it('fills the axis when the schedule has no duration', () => {
+    expect(servicePositions([service(1, 'V1', 30, 30)]).get(1)).toEqual({ leftPercent: 0, widthPercent: 100 });
+  });
+
+  it('is empty without services', () => {
+    expect(servicePositions([]).size).toBe(0);
+  });
+});
+
+describe('pathStripSegments', () => {
+  it('gives each path element the seconds spent on it, in path order', () => {
+    const segments = pathStripSegments(service(1, 'V1', 10, 40));
+
+    expect(segments.map((segment) => [segment.pathIndex, segment.elementId, segment.seconds]))
+      .toEqual([[0, 'Y', 0], [1, 'P1A', 30]]);
+  });
+
+  it('keeps the interval times for the tooltip', () => {
+    expect(pathStripSegments(service(1, 'V1', 10, 40))[1]).toMatchObject({ startTime: at(10), endTime: at(40) });
   });
 });

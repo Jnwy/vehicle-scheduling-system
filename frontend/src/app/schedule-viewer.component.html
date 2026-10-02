@@ -112,12 +112,23 @@
               <div class="service-summary">
                 <div>
                   <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
-                  <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }} | {{ service.path.join(' -> ') }}</p>
+                  <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }}</p>
                 </div>
                 <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
                   {{ expandedServiceIds().has(service.id) ? 'Hide timeline' : 'Timeline' }}
                 </button>
               </div>
+              <app-service-path-strip [service]="service" [topology]="topology()" />
+              @if (servicePositions().get(service.id); as position) {
+                <div
+                  class="service-position"
+                  role="img"
+                  [attr.aria-label]="'Service #' + service.id + ' runs ' + formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service)) + ' within the schedule'"
+                  [attr.title]="formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service))"
+                  >
+                  <span [style.left.%]="position.leftPercent" [style.width.%]="position.widthPercent"></span>
+                </div>
+              }
               @if (expandedServiceIds().has(service.id)) {
                 <div class="timeline">
                   <div class="table-row table-head">

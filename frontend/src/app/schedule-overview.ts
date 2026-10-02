@@ -1,4 +1,4 @@
-import type { ScheduleAnalysis, ServiceResponse } from './models';
+import type { ScheduleAnalysis, ServiceResponse, TimelineInterval } from './models';
 import { scheduleRange } from './playback';
 
 export interface OverviewBar {
@@ -17,6 +17,43 @@ export interface VehicleOverview {
 
 export function serviceEndTime(service: ServiceResponse): string {
   return service.timeline.at(-1)?.endTime ?? service.startTime;
+}
+
+export interface PathStripSegment extends TimelineInterval {
+  seconds: number;
+}
+
+// The service timeline with the time spent on each path element.
+export function pathStripSegments(service: ServiceResponse): PathStripSegment[] {
+  return service.timeline.map((interval) => ({
+    ...interval,
+    seconds: (Date.parse(interval.endTime) - Date.parse(interval.startTime)) / 1000,
+  }));
+}
+
+export interface ServicePosition {
+  leftPercent: number;
+  widthPercent: number;
+}
+
+// Where each service sits on one time axis running from the earliest start to
+// the latest end of all the services, keyed by service ID.
+export function servicePositions(services: ServiceResponse[]): Map<number, ServicePosition> {
+  const spans = services.map((service) => ({
+    id: service.id,
+    start: Date.parse(service.startTime),
+    end: Date.parse(serviceEndTime(service)),
+  }));
+  const axisStart = Math.min(...spans.map((span) => span.start));
+  const axisLength = Math.max(...spans.map((span) => span.end)) - axisStart;
+
+  return new Map(spans.map(({ id, start, end }) => [
+    id,
+    // Without any duration to compare, the only instant fills the axis.
+    axisLength > 0
+      ? { leftPercent: ((start - axisStart) / axisLength) * 100, widthPercent: ((end - start) / axisLength) * 100 }
+      : { leftPercent: 0, widthPercent: 100 },
+  ]));
 }
 
 // Groups the schedule by vehicle in time order and places each service and
