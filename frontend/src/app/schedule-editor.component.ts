@@ -1,6 +1,7 @@
 
 import { ChangeDetectorRef, Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -61,6 +62,9 @@ export class ScheduleEditorComponent implements OnInit {
   private readonly api = inject(SchedulingApi);
   private readonly destroyRef = inject(DestroyRef);
   private readonly changeDetector = inject(ChangeDetectorRef);
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  // The Block Configuration page links here with ?edit=<service id>.
+  private requestedEditId = Number(this.route?.snapshot.queryParamMap.get('edit') ?? NaN);
   private originalService: ServiceResponse | null = null;
   private timingInputsChanged = false;
   readonly loadingInitial = signal(false);
@@ -298,6 +302,11 @@ export class ScheduleEditorComponent implements OnInit {
         }
         this.refreshConflicts();
         this.loadingInitial.set(false);
+        const requested = services.find((service) => service.id === this.requestedEditId);
+        this.requestedEditId = NaN;
+        if (requested) {
+          this.startEdit(requested);
+        }
       },
       error: (error: unknown) => {
         this.loadingInitial.set(false);

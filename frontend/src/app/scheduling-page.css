@@ -1479,3 +1479,37 @@ input[type="range"] {
   button, .page-nav a { transition: none; }
   .surface-enter, .surface-leave, .notice.toast.toast-leave { animation: none; }
 }
+
+.stale-list {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stale-list li {
+  display: grid;
+  grid-template-columns: 90px 190px minmax(0, 1fr) max-content;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #e8c88a;
+  border-left: 3px solid #b7791f;
+  border-radius: 6px;
+  background: #fdf6e3;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.stale-list a {
+  color: #8a4a2c;
+  font-weight: 700;
+}
+
+@media (max-width: 680px) {
+  .stale-list li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

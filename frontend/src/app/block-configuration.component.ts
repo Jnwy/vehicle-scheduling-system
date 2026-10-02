@@ -1,15 +1,18 @@
 
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 
 import { SchedulingApi } from './scheduling-api.service';
-import { BlockRequest, TopologyResponse } from './models';
-import { errorMessage } from './page-helpers';
+import { BlockRequest, ServiceResponse, TopologyResponse } from './models';
+import { errorMessage, formatForDisplay } from './page-helpers';
+import { staleServices } from './service-timing';
 import { BlockTraversalChange, TrackMapComponent } from './track-map.component';
 
 @Component({
   selector: 'app-block-configuration',
-  imports: [TrackMapComponent],
+  imports: [RouterLink, TrackMapComponent],
   templateUrl: './block-configuration.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -20,6 +23,15 @@ export class BlockConfigurationComponent implements OnInit {
   readonly notice = signal('');
   readonly noticeKind = signal<'success' | 'error' | 'warning'>('success');
   readonly topology = signal<TopologyResponse>({ elements: [], connections: [] });
+  readonly services = signal<ServiceResponse[]>([]);
+  // Bumped on every saved block, because the topology is updated in place.
+  private readonly blockRevision = signal(0);
+  // Saved services keep their snapshot, so a block change leaves these behind.
+  readonly staleServices = computed(() => {
+    this.blockRevision();
+    return staleServices(this.services(), this.topology().elements);
+  });
+  readonly formatForDisplay = formatForDisplay;
 
   ngOnInit(): void {
     this.refreshAll();
@@ -28,9 +40,13 @@ export class BlockConfigurationComponent implements OnInit {
   refreshAll(): void {
     this.loadingInitial.set(true);
     this.clearNotice();
-    this.api.getTopology().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (topology) => {
+    forkJoin({
+      topology: this.api.getTopology(),
+      services: this.api.getServices(),
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: ({ topology, services }) => {
         this.topology.set(topology);
+        this.services.set(services);
         this.loadingInitial.set(false);
       },
       error: (error: unknown) => {
@@ -58,6 +74,7 @@ export class BlockConfigurationComponent implements OnInit {
         if (element) {
           element.traversalSeconds = block.traversalSeconds;
         }
+        this.blockRevision.update((revision) => revision + 1);
         this.showSuccess(`${block.id} traversal time saved: ${block.traversalSeconds}s.`);
       },
       error: (error: unknown) => {

@@ -25,3 +25,24 @@
     (blockTraversalChanged)="saveBlock($event)"
     />
 </section>
+
+@if (staleServices().length > 0) {
+  <section class="panel stale-panel" aria-live="polite">
+    <h2>Services still using earlier block times</h2>
+    <p>
+      These services were saved before a block on their path was changed, so their timelines keep the earlier times.
+      Open one in the editor to see the new times and any conflict, then update it. Updating one service can move it
+      into the next service of the same vehicle, so check the list again afterwards.
+    </p>
+    <ul class="stale-list">
+      @for (service of staleServices(); track service.id) {
+        <li>
+          <strong>#{{ service.id }} | {{ service.vehicleId }}</strong>
+          <span>{{ formatForDisplay(service.startTime) }}</span>
+          <span>{{ service.path[0] }} → {{ service.path[service.path.length - 1] }} · {{ service.path.length }} elements</span>
+          <a class="button-link" routerLink="/editor" [queryParams]="{ edit: service.id }">Open in editor</a>
+        </li>
+      }
+    </ul>
+  </section>
+}
