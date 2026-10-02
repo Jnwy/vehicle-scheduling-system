@@ -14,6 +14,13 @@ const VIEWBOX_HEIGHT = 360;
 // Headroom above the top row so a second stacked vehicle marker is not clipped.
 const VIEWBOX_TOP_MARGIN = 40;
 
+// Candidates use blue so they stay distinct from the green selected path.
+const CANDIDATE_STROKE = '#2563eb';
+const CANDIDATE_HALO = '#93c5fd';
+
+const ARROW_GROW_MS = 350;
+const RING_TRACE_MS = 450;
+
 // Crossover blocks sit on the straight line between their two neighbours and
 // away from its midpoint, so each pair (B8/B10, B4/B13) draws as an X as in
 // docs/topology.png without the two block nodes landing on the crossing.
@@ -57,10 +64,8 @@ const POINTS: Record<string, Point> = {
       <span><i class="platform"></i>Platform</span>
       <span><i class="block"></i>Block</span>
       @if (mapPurpose === 'editor') {
+        <span><i class="selected"></i>Selected path</span>
         <span><i class="candidate"></i>Available next</span>
-      }
-      @if (mapPurpose === 'editor') {
-        <span><i class="path-end"></i>Editing path endpoint</span>
       }
       @if (mapPurpose === 'viewer') {
         <span><i class="vehicle"></i>Playback vehicle position</span>
@@ -80,8 +85,15 @@ const POINTS: Record<string, Point> = {
     .legend .yard { background: #d8edf2; }
     .legend .platform { background: #e6edf5; }
     .legend .block { border-radius: 50%; background: #f0f4e9; }
-    .legend .candidate { border-color: #13815b; box-shadow: 0 0 0 2px #bce8d6; }
-    .legend .path-end { border-color: #0b6f8f; background: #dff3f8; }
+    .legend .selected { border-color: #13795b; background: #ccebdd; }
+    .legend .candidate { border-color: #2563eb; box-shadow: 0 0 0 3px #93c5fd; animation: candidate-breathe 1.8s ease-in-out infinite; }
+    @keyframes candidate-breathe {
+      0%, 100% { box-shadow: 0 0 0 3px #93c5fd; }
+      50% { box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.15); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .legend .candidate { animation: none; }
+    }
     .legend .vehicle { border-radius: 50%; background: #4e79a7; }
     .legend .conflict { border-color: #b42318; background: #fee4e2; }
     @media (max-width: 680px) {
@@ -100,6 +112,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   @Input() mapPurpose: 'editor' | 'viewer' = 'editor';
   @Output() readonly elementSelected = new EventEmitter<string>();
 
+  private growingEdge: string | null = null;
+
   get topologyMissing(): boolean {
     return this.topology.elements.length === 0;
   }
@@ -109,6 +123,17 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    const pathChange = changes['selectedPath'];
+    if (pathChange && !pathChange.firstChange) {
+      // Only a single appended element animates; undo, clear and loading a
+      // saved path redraw without motion.
+      const previous = (pathChange.previousValue ?? []) as string[];
+      const current = this.selectedPath;
+      const appendedOne = current.length === previous.length + 1
+        && current.length >= 2
+        && previous.every((elementId, index) => elementId === current[index]);
+      this.growingEdge = appendedOne ? `${current.at(-2)}->${current.at(-1)}` : null;
+    }
     if (this.svgRef && Object.keys(changes).length > 0) {
       this.render();
     }
@@ -153,9 +178,35 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('x2', (edge) => points[edge.toElementId].x)
       .attr('y2', (edge) => points[edge.toElementId].y)
       .attr('stroke', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? '#13795b' : '#9aabba')
-      .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 6 : 2.5)
+      .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 4 : 2.5)
       .attr('stroke-linecap', 'round')
-      .attr('marker-end', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 'url(#arrow-selected)' : 'url(#arrow)');
+      .attr('marker-end', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 'url(#arrow-selected)' : 'url(#arrow)')
+      // Bidirectional connections overlap, so selected edges must be drawn
+      // last or the grey reverse edge covers them.
+      .filter((edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`))
+      .raise();
+
+    const growingEdge = this.growingEdge;
+    this.growingEdge = null;
+    if (growingEdge && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      svg.select('.connections')
+        .selectAll<SVGLineElement, TopologyResponse['connections'][number]>('line')
+        .filter((edge) => `${edge.fromElementId}->${edge.toElementId}` === growingEdge)
+        // The arrowhead trails the line end by 48 units, so starting any
+        // shorter would draw it behind the source node.
+        .each(function (edge) {
+          const from = points[edge.fromElementId];
+          const to = points[edge.toElementId];
+          const start = Math.min(1, 48 / Math.hypot(to.x - from.x, to.y - from.y));
+          d3.select(this)
+            .attr('x2', from.x + (to.x - from.x) * start)
+            .attr('y2', from.y + (to.y - from.y) * start);
+        })
+        .transition()
+        .duration(ARROW_GROW_MS)
+        .attr('x2', (edge) => points[edge.toElementId].x)
+        .attr('y2', (edge) => points[edge.toElementId].y);
+    }
 
     const node = svg.append('g')
       .attr('class', 'nodes')
@@ -176,7 +227,28 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         }
       });
 
+    // Breathing halo behind each candidate signals that it can be clicked.
+    // SMIL is used because Angular's scoped component styles do not reach
+    // elements created by d3.
+    const halo = node.filter((element) => eligibleIds.has(element.id))
+      .append('rect')
+      .attr('x', (element) => element.elementType === 'BLOCK' ? -28 : -37)
+      .attr('y', (element) => element.elementType === 'BLOCK' ? -22 : -27)
+      .attr('width', (element) => element.elementType === 'BLOCK' ? 56 : 74)
+      .attr('height', (element) => element.elementType === 'BLOCK' ? 44 : 54)
+      .attr('rx', (element) => element.elementType === 'YARD' ? 8 : element.elementType === 'PLATFORM' ? 11 : 22)
+      .attr('fill', CANDIDATE_HALO)
+      .attr('opacity', 0.6);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      halo.append('animate')
+        .attr('attributeName', 'opacity')
+        .attr('values', '0.85;0.15;0.85')
+        .attr('dur', '1.8s')
+        .attr('repeatCount', 'indefinite');
+    }
+
     node.append('rect')
+      .attr('class', 'node-shape')
       .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
       .attr('y', (element) => element.elementType === 'BLOCK' ? -16 : -21)
       .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
@@ -185,6 +257,40 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds))
       .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
       .attr('stroke-width', (element) => eligibleIds.has(element.id) || selectedIds.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2);
+
+    if (growingEdge && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // The newly selected node stays unselected until the arrow arrives,
+      // then a green ring is traced around it while the fill fades in.
+      const arrivedId = this.selectedPath[this.selectedPath.length - 1];
+      const firstVisit = this.selectedPath.indexOf(arrivedId) === this.selectedPath.length - 1;
+      const arrived = node.filter((element) => element.id === arrivedId);
+      const shape = arrived.select<SVGRectElement>('.node-shape');
+      shape.attr('stroke', '#667889').attr('stroke-width', 2);
+      if (firstVisit) {
+        shape
+          .attr('fill', (element) => this.nodeFill(element, new Set(), conflictIds, playbackIds))
+          .transition()
+          .delay(ARROW_GROW_MS)
+          .duration(RING_TRACE_MS)
+          .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds));
+      }
+      arrived.insert('rect', 'text')
+        .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
+        .attr('y', (element) => element.elementType === 'BLOCK' ? -16 : -21)
+        .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
+        .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
+        .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
+        .attr('fill', 'none')
+        .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
+        .attr('stroke-width', 4)
+        .attr('pathLength', 1)
+        .attr('stroke-dasharray', 1)
+        .attr('stroke-dashoffset', 1)
+        .transition()
+        .delay(ARROW_GROW_MS)
+        .duration(RING_TRACE_MS)
+        .attr('stroke-dashoffset', 0);
+    }
 
     node.append('text')
       .attr('text-anchor', 'middle')
@@ -220,18 +326,29 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
 
   private addMarkers(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
     const defs = svg.append('defs');
-    for (const [id, color] of [['arrow', '#778999'], ['arrow-selected', '#13795b']] as const) {
-      defs.append('marker')
-        .attr('id', id)
-        .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 19)
-        .attr('markerWidth', 5)
-        .attr('markerHeight', 5)
-        .attr('orient', 'auto')
-        .append('path')
-        .attr('d', 'M0,-5L10,0L0,5')
-        .attr('fill', color);
-    }
+    defs.append('marker')
+      .attr('id', 'arrow')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 19)
+      .attr('markerWidth', 5)
+      .attr('markerHeight', 5)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('fill', '#778999');
+    // Fixed-size head so it does not grow with the thicker selected line;
+    // refX places the tip just outside the widest node (half-width 31).
+    defs.append('marker')
+      .attr('id', 'arrow-selected')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('markerUnits', 'userSpaceOnUse')
+      .attr('refX', 34)
+      .attr('markerWidth', 14)
+      .attr('markerHeight', 14)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('fill', '#13795b');
   }
 
   private drawStationBands(
@@ -401,11 +518,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     if (playback.has(element.id)) {
       return '#0b6f8f';
     }
+    // A selected element that can be revisited keeps its selected fill but
+    // takes the candidate stroke, so it still reads as clickable.
+    if (eligible.has(element.id)) {
+      return CANDIDATE_STROKE;
+    }
     if (selected.has(element.id)) {
       return '#13795b';
-    }
-    if (eligible.has(element.id)) {
-      return '#16845e';
     }
     return '#667889';
   }
