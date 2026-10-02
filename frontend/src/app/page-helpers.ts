@@ -26,6 +26,28 @@ export function formatForDisplay(value: string): string {
   return value.replace('T', ' ').replace('+08:00', '');
 }
 
+export function formatServiceDate(value: string): string {
+  return formatForDisplay(value).slice(0, 10);
+}
+
+export function formatClockTime(value: string): string {
+  return formatForDisplay(value).slice(11, 19);
+}
+
+export function formatTimelineTime(value: string, reference: string): string {
+  return formatServiceDate(value) === formatServiceDate(reference)
+    ? formatClockTime(value)
+    : `${formatServiceDate(value)} ${formatClockTime(value)}`;
+}
+
+export function formatDuration(startTime: string, endTime: string): string {
+  const seconds = Math.max(0, Math.round((Date.parse(endTime) - Date.parse(startTime)) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  return minutes === 0 ? `${remainingSeconds}s` : `${minutes}m ${remainingSeconds}s`;
+}
+
 export function toDatetimeLocal(value: string): string {
   const match = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)/);
   if (match === null) {

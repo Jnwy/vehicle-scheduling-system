@@ -312,13 +312,24 @@ describe('derivePlatformTimings', () => {
 });
 
 describe('savedTimingsAreStale', () => {
-  const saved: Pick<ServiceResponse, 'startTime' | 'path' | 'platformTimings'> = {
+  const saved: Pick<ServiceResponse, 'startTime' | 'path' | 'platformTimings' | 'timeline'> = {
     startTime: '2026-10-03T09:00:00+08:00',
     path: ['Y', 'B1', 'P1A', 'B3', 'B5', 'P2A'],
     platformTimings: [
       { pathIndex: 2, arrivalTime: '2026-10-03T09:00:20+08:00', departureTime: '2026-10-03T09:01:20+08:00' },
       { pathIndex: 5, arrivalTime: '2026-10-03T09:02:00+08:00', departureTime: '2026-10-03T09:03:00+08:00' },
     ],
+    timeline: [
+      ['Y', '09:00:00', '09:00:00'],
+      ['B1', '09:00:00', '09:00:20'],
+      ['P1A', '09:00:20', '09:01:20'],
+      ['B3', '09:01:20', '09:01:40'],
+      ['B5', '09:01:40', '09:02:00'],
+      ['P2A', '09:02:00', '09:03:00'],
+    ].map(([elementId, start, end], pathIndex) => ({
+      pathIndex, elementId,
+      startTime: `2026-10-03T${start}+08:00`, endTime: `2026-10-03T${end}+08:00`,
+    })),
   };
 
   it('is false when the snapshot matches the current block configuration', () => {
@@ -354,5 +365,34 @@ describe('savedTimingsAreStale', () => {
 
   it('does not judge a path whose block is unconfigured', () => {
     expect(savedTimingsAreStale(saved, elements({ B1: null }))).toBe(false);
+  });
+
+  it.each([0, 10, 30])('detects a yard-only loop reconfigured to %s seconds', (seconds) => {
+    const loop = {
+      ...saved, path: ['Y', 'B1', 'Y'], platformTimings: [],
+      timeline: [
+        saved.timeline[0], saved.timeline[1],
+        { pathIndex: 2, elementId: 'Y', startTime: saved.timeline[1].endTime, endTime: saved.timeline[1].endTime },
+      ],
+    };
+    expect(savedTimingsAreStale(loop, elements())).toBe(false);
+    expect(savedTimingsAreStale(loop, elements({ B1: seconds }))).toBe(true);
+  });
+
+  it('detects a block change after the last platform', () => {
+    const returning = {
+      ...saved, path: ['P1A', 'B1', 'Y'],
+      platformTimings: [{ pathIndex: 0, arrivalTime: saved.startTime, departureTime: saved.startTime }],
+      timeline: [
+        { ...saved.timeline[0], elementId: 'P1A' }, saved.timeline[1],
+        { pathIndex: 2, elementId: 'Y', startTime: saved.timeline[1].endTime, endTime: saved.timeline[1].endTime },
+      ],
+    };
+    expect(savedTimingsAreStale(returning, elements())).toBe(false);
+    expect(savedTimingsAreStale(returning, elements({ B1: 30 }))).toBe(true);
+  });
+
+  it('detects changed block durations even when their total duration stays the same', () => {
+    expect(savedTimingsAreStale(saved, elements({ B3: 10, B5: 30 }))).toBe(true);
   });
 });

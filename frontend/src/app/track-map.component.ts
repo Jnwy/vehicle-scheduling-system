@@ -11,6 +11,14 @@ interface Point {
   y: number;
 }
 
+export interface EndDwell {
+  elementId: string;
+  seconds: number;
+}
+
+// One press of the dwell buttons on the map.
+const DWELL_STEP_SECONDS = 10;
+
 export interface BlockTraversalChange {
   blockId: string;
   value: string;
@@ -28,6 +36,10 @@ const ARROW_LENGTH = 12;
 const SELECTED_ARROW_LENGTH = 14;
 // Clearance between a node's outline and a line end or arrow tip.
 const NODE_GAP = 4;
+
+const BLOCK_LABEL_HALF_WIDTH = 27;
+const BLOCK_LABEL_HEIGHT = 22;
+const JUNCTION_RADIUS = 4;
 
 // Blocks on the configuration map are drawn as input fields.
 const CONFIG_BLOCK_HALF_WIDTH = 31;
@@ -69,9 +81,9 @@ const RING_TRACE_MS = 450;
 const CANDIDATE_FADE_OUT_MS = 250;
 const CANDIDATE_FADE_IN_MS = 700;
 
-// Crossover blocks sit on the straight line between their two neighbours and
-// away from its midpoint, so each pair (B8/B10, B4/B13) draws as an X as in
-// docs/topology.png without the two block nodes landing on the crossing.
+// Branch blocks sit on the straight line between a stop and the visual
+// junction circle. Blocks remain graph elements, but the map reads as a track
+// diagram rather than a node diagram.
 const POINTS: Record<string, Point> = {
   Y: { x: 980, y: 65 },
   B1: { x: 880, y: 65 },
@@ -79,24 +91,50 @@ const POINTS: Record<string, Point> = {
   P1A: { x: 735, y: 65 },
   P1B: { x: 735, y: 255 },
   B3: { x: 620, y: 65 },
-  B4: { x: 574, y: 122 },
+  B4: { x: 614.25, y: 122 },
   B5: { x: 505, y: 65 },
   P2A: { x: 395, y: 65 },
   B6: { x: 285, y: 65 },
   B7: { x: 175, y: 65 },
-  B8: { x: 138, y: 198 },
+  B8: { x: 121.5, y: 198 },
   P3A: { x: 75, y: 65 },
   P3B: { x: 75, y: 255 },
-  B10: { x: 222, y: 198 },
+  B10: { x: 183.5, y: 198 },
   B9: { x: 175, y: 255 },
   B11: { x: 285, y: 255 },
   P2B: { x: 395, y: 255 },
   B12: { x: 505, y: 255 },
-  B13: { x: 666, y: 122 },
+  B13: { x: 683.25, y: 122 },
   B14: { x: 620, y: 255 },
 };
 
 type Connection = TopologyResponse['connections'][number];
+
+type PointReference = { from: string; to: string; t: number };
+
+const VISUAL_ENDPOINTS: Record<string, { from?: PointReference; to?: PointReference }> = {
+  // Blocks are labels on track, not junctions. These edges visually leave or
+  // join the main line between blocks, while the graph edge remains unchanged.
+  'P2B->B12': { to: { from: 'B12', to: 'B14', t: 0.5 } },
+  'B12->B14': { from: { from: 'B12', to: 'B14', t: 0.5 } },
+  'B12->B13': { from: { from: 'B12', to: 'B14', t: 0.5 } },
+  'P2A->B6': { to: { from: 'B6', to: 'B7', t: 0.5 } },
+  'B6->B7': { from: { from: 'B6', to: 'B7', t: 0.5 } },
+  'B6->B8': { from: { from: 'B6', to: 'B7', t: 0.5 } },
+  'B3->B5': { to: { from: 'B3', to: 'B5', t: 0.5 } },
+  'B5->P2A': { from: { from: 'B3', to: 'B5', t: 0.5 } },
+  'B4->B5': { to: { from: 'B3', to: 'B5', t: 0.5 } },
+  'B10->B11': { to: { from: 'B9', to: 'B11', t: 0.5 } },
+  'B11->P2B': { from: { from: 'B9', to: 'B11', t: 0.5 } },
+  'B9->B11': { to: { from: 'B9', to: 'B11', t: 0.5 } },
+};
+
+const JUNCTION_REFERENCES: PointReference[] = [
+  { from: 'B12', to: 'B14', t: 0.5 },
+  { from: 'B6', to: 'B7', t: 0.5 },
+  { from: 'B3', to: 'B5', t: 0.5 },
+  { from: 'B9', to: 'B11', t: 0.5 },
+];
 
 // A vehicle keeps one colour whichever vehicles are on the map at the moment:
 // the number in its ID picks the colour, so V1 is always the first one.
@@ -112,10 +150,14 @@ export function vehicleColor(vehicleId: string): string {
 // Distance from a node's centre to its rounded-rectangle outline along the
 // unit direction (ux, uy). Sizes match the node shapes drawn in render().
 function outlineDistance(elementType: string | undefined, ux: number, uy: number): number {
+  if (elementType === 'BLOCK' || elementType === 'TRACK') {
+    return 0;
+  }
+  if (elementType === 'JUNCTION') {
+    return JUNCTION_RADIUS;
+  }
   const [halfWidth, halfHeight, radius] = elementType === 'CONFIG_BLOCK'
     ? [CONFIG_BLOCK_HALF_WIDTH, 16, CONFIG_BLOCK_RADIUS]
-    : elementType === 'BLOCK'
-    ? [22, 16, 16]
     :[31, 21, elementType === 'YARD' ? 4 : 7];
   const ax = Math.abs(ux);
   const ay = Math.abs(uy);
@@ -131,7 +173,22 @@ function outlineDistance(elementType: string | undefined, ux: number, uy: number
 }
 
 function isBlockType(elementType: string | undefined): boolean {
-  return elementType === 'BLOCK' || elementType === 'CONFIG_BLOCK';
+  return elementType === 'BLOCK' || elementType === 'CONFIG_BLOCK' || elementType === 'TRACK';
+}
+
+function pointBetween(points: Record<string, Point>, reference: PointReference | undefined, fallback: Point): Point {
+  if (reference === undefined) {
+    return fallback;
+  }
+  const from = points[reference.from];
+  const to = points[reference.to];
+  if (from === undefined || to === undefined) {
+    return fallback;
+  }
+  return {
+    x: from.x + (to.x - from.x) * reference.t,
+    y: from.y + (to.y - from.y) * reference.t,
+  };
 }
 
 // A connection line from the source outline to just short of the target
@@ -175,7 +232,7 @@ function connectionLine(
       <span><i class="yard"></i>Yard</span>
       <span><i class="platform"></i>Platform</span>
       @if (mapPurpose !== 'config') {
-        <span><i class="block"></i>Block</span>
+        <span><i class="block"></i>Block label</span>
       }
       @if (mapPurpose === 'editor') {
         <span><i class="selected"></i>Selected path</span>
@@ -206,7 +263,7 @@ function connectionLine(
     .legend i { width: 13px; height: 13px; border: 2px solid #5e5d59; border-radius: 3px; background: #fff; }
     .legend .yard { background: #e3dacc; }
     .legend .platform { background: #f0eee6; }
-    .legend .block { border-radius: 50%; background: #ffffff; }
+    .legend .block { width: 20px; height: 0; border: 0; border-top: 2px solid #73726c; border-radius: 0; background: transparent; }
     .legend .field { width: 20px; border-color: #c15f3c; }
     .legend .selected { border-color: #13795b; background: #ccebdd; }
     .legend .candidate { border-color: #2563eb; animation: candidate-breathe 1.8s ease-in-out infinite; }
@@ -238,6 +295,10 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   // it would break a rule for. Their marker or battery icon blinks.
   @Input() alertVehicleIds: string[] = [];
   @Input() batteryAlertVehicleIds: string[] = [];
+  // The dwell at the platform the path being built ends at, shown under that
+  // platform with buttons to change it.
+  @Input() endDwell: EndDwell | null = null;
+  @Output() readonly endDwellStepped = new EventEmitter<number>();
   // The vehicle the editor form is about; its car and label get a pulsing, glowing outline.
   @Input() focusVehicleId = '';
   // Next elements that cannot be entered right now, with the reason shown on hover.
@@ -355,11 +416,18 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     const arrowLengthOf = (edge: Connection) => isSelectedEdge(edge) ? SELECTED_ARROW_LENGTH : ARROW_LENGTH;
     const sharesSpanWithReverse = (edge: Connection) =>
       allEdges.has(reverseKey(edge)) && isSelectedEdge(edge) === selectedEdges.has(reverseKey(edge));
+    const visualOf = (edge: Connection) => VISUAL_ENDPOINTS[`${edge.fromElementId}->${edge.toElementId}`];
+    const sourceTypeOf = (edge: Connection) => visualOf(edge)?.from === undefined
+      ? elementTypes.get(edge.fromElementId)
+      : 'TRACK';
+    const targetTypeOf = (edge: Connection) => visualOf(edge)?.to === undefined
+      ? elementTypes.get(edge.toElementId)
+      : 'JUNCTION';
     const lineOf = (edge: Connection) => connectionLine(
-      points[edge.fromElementId],
-      points[edge.toElementId],
-      elementTypes.get(edge.fromElementId),
-      elementTypes.get(edge.toElementId),
+      pointBetween(points, visualOf(edge)?.from, points[edge.fromElementId]),
+      pointBetween(points, visualOf(edge)?.to, points[edge.toElementId]),
+      sourceTypeOf(edge),
+      targetTypeOf(edge),
       arrowLengthOf(edge),
       sharesSpanWithReverse(edge) ? arrowLengthOf(edge) : 0,
     );
@@ -377,7 +445,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 4 : 2.5)
       .attr('stroke-linecap', 'round')
       .attr('marker-end', (edge) => {
-        if (isBlockType(elementTypes.get(edge.toElementId))) {
+        if (isBlockType(targetTypeOf(edge))) {
           return null;
         }
         return isSelectedEdge(edge) ? 'url(#arrow-selected)' : 'url(#arrow)';
@@ -386,6 +454,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       // last or the grey reverse edge covers them.
       .filter((edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`))
       .raise();
+
+    this.drawJunctions(svg, points);
 
     const growingEdges = this.growingEdges;
     this.growingEdges = [];
@@ -441,14 +511,23 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
 
     node.append('rect')
       .attr('class', 'node-shape')
-      .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
-      .attr('y', (element) => element.elementType === 'BLOCK' ? -16 : -21)
-      .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
-      .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
-      .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
-      .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds))
-      .attr('stroke', (element) => this.nodeStroke(element, selectedIds, conflictIds, playbackIds))
-      .attr('stroke-width', (element) => selectedIds.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2);
+      .attr('x', (element) => element.elementType === 'BLOCK' ? -BLOCK_LABEL_HALF_WIDTH : -31)
+      .attr('y', (element) => element.elementType === 'BLOCK' ? -BLOCK_LABEL_HEIGHT / 2 : -21)
+      .attr('width', (element) => element.elementType === 'BLOCK' ? BLOCK_LABEL_HALF_WIDTH * 2 : 62)
+      .attr('height', (element) => element.elementType === 'BLOCK' ? BLOCK_LABEL_HEIGHT : 42)
+      .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 2)
+      .attr('fill', (element) => element.elementType === 'BLOCK'
+        ? 'transparent'
+        : this.nodeFill(element, selectedIds, conflictIds, playbackIds))
+      .attr('stroke', (element) => element.elementType === 'BLOCK'
+        ? 'transparent'
+        : this.nodeStroke(element, selectedIds, conflictIds, playbackIds))
+      .attr('stroke-width', (element) => {
+        if (element.elementType === 'BLOCK') {
+          return 0;
+        }
+        return selectedIds.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2;
+      });
 
     // A breathing blue outline on each candidate signals that it can be
     // clicked. SMIL is used because Angular's scoped component styles do not
@@ -476,11 +555,11 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     }
     const ring = ringGroup
       .append('rect')
-      .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
-      .attr('y', (element) => element.elementType === 'BLOCK' ? -16 : -21)
-      .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
-      .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
-      .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
+      .attr('x', (element) => element.elementType === 'BLOCK' ? -BLOCK_LABEL_HALF_WIDTH : -31)
+      .attr('y', (element) => element.elementType === 'BLOCK' ? -BLOCK_LABEL_HEIGHT / 2 : -21)
+      .attr('width', (element) => element.elementType === 'BLOCK' ? BLOCK_LABEL_HALF_WIDTH * 2 : 62)
+      .attr('height', (element) => element.elementType === 'BLOCK' ? BLOCK_LABEL_HEIGHT : 42)
+      .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 2)
       .attr('fill', 'none')
       .attr('stroke', CANDIDATE_STROKE)
       .attr('stroke-width', 4)
@@ -514,11 +593,11 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
           .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds));
       }
       arrived.insert('rect', 'text')
-        .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
-        .attr('y', (element) => element.elementType === 'BLOCK' ? -16 : -21)
-        .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
-        .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
-        .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
+        .attr('x', (element) => element.elementType === 'BLOCK' ? -BLOCK_LABEL_HALF_WIDTH : -31)
+        .attr('y', (element) => element.elementType === 'BLOCK' ? -BLOCK_LABEL_HEIGHT / 2 : -21)
+        .attr('width', (element) => element.elementType === 'BLOCK' ? BLOCK_LABEL_HALF_WIDTH * 2 : 62)
+        .attr('height', (element) => element.elementType === 'BLOCK' ? BLOCK_LABEL_HEIGHT : 42)
+        .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 2)
         .attr('fill', 'none')
         .attr('stroke', (element) => this.nodeStroke(element, selectedIds, conflictIds, playbackIds))
         .attr('stroke-width', 4)
@@ -536,12 +615,18 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     // In configuration mode the block label moves above the node to leave
     // the node itself for the traversal time input.
     node.append('text')
-      .attr('y', (element) => configurable(element) ? -25 : 0)
+      .attr('y', (element) => configurable(element) ? -25 : element.elementType === 'BLOCK' ? -15 : 0)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
-      .attr('fill', '#141413')
+      .attr('fill', (element) => element.elementType === 'BLOCK'
+        && (conflictIds.has(element.id) || playbackIds.has(element.id) || selectedIds.has(element.id))
+          ? this.nodeStroke(element, selectedIds, conflictIds, playbackIds)
+          : '#141413')
       .attr('font-size', (element) => configurable(element) ? 12 : 14)
       .attr('font-weight', 800)
+      .attr('stroke', (element) => element.elementType === 'BLOCK' && !configurable(element) ? '#faf9f5' : null)
+      .attr('stroke-width', (element) => element.elementType === 'BLOCK' && !configurable(element) ? 4 : null)
+      .attr('paint-order', 'stroke')
       .text((element) => element.id);
 
     if (this.mapPurpose === 'config') {
@@ -588,14 +673,83 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-weight', 800)
       .text('blocked');
 
+    this.drawEndDwell(svg, points);
     this.drawVehicles();
+  }
+
+  private drawEndDwell(
+    svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
+    points: Record<string, Point>,
+  ): void {
+    const dwell = this.endDwell;
+    const point = dwell === null ? undefined : points[dwell.elementId];
+    if (dwell === null || point === undefined) {
+      return;
+    }
+    const control = svg.append('g')
+      .attr('class', 'end-dwell')
+      .attr('transform', `translate(${point.x},${point.y + 40})`);
+    control.append('rect')
+      .attr('x', -52)
+      .attr('y', -12)
+      .attr('width', 104)
+      .attr('height', 24)
+      .attr('rx', 12)
+      .attr('fill', '#ffffff')
+      .attr('stroke', '#13795b')
+      .attr('stroke-width', 1.5);
+    control.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('fill', '#141413')
+      .attr('font-size', 12)
+      .attr('font-weight', 800)
+      .text(`stop ${dwell.seconds} s`);
+    const buttons: { x: number; sign: string; step: number; label: string }[] = [
+      { x: -40, sign: '−', step: -DWELL_STEP_SECONDS, label: `Stop ${DWELL_STEP_SECONDS} seconds less at ${dwell.elementId}` },
+      { x: 40, sign: '+', step: DWELL_STEP_SECONDS, label: `Stop ${DWELL_STEP_SECONDS} seconds longer at ${dwell.elementId}` },
+    ];
+    const usable = (step: number) => this.interactive && dwell.seconds + step >= 0;
+    const press = (step: number) => {
+      if (usable(step)) {
+        this.endDwellStepped.emit(step);
+      }
+    };
+    const button = control.selectAll<SVGGElement, typeof buttons[number]>('g')
+      .data(buttons)
+      .join('g')
+      .attr('transform', ({ x }) => `translate(${x},0)`)
+      .attr('role', 'button')
+      .attr('tabindex', ({ step }) => usable(step) ? 0 : null)
+      .attr('aria-label', ({ label }) => label)
+      .attr('aria-disabled', ({ step }) => usable(step) ? null : 'true')
+      .style('cursor', ({ step }) => usable(step) ? 'pointer' : 'default')
+      .style('opacity', ({ step }) => usable(step) ? 1 : 0.35)
+      .on('click', (_, { step }) => press(step))
+      .on('keydown', (event: KeyboardEvent, { step }) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          press(step);
+        }
+      });
+    button.append('title').text(({ label }) => label);
+    button.append('circle').attr('r', 9).attr('fill', '#13795b');
+    button.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('fill', '#ffffff')
+      .attr('font-size', 14)
+      .attr('font-weight', 800)
+      .text(({ sign }) => sign);
   }
 
   private drawTraversalInputs(blocks: d3.Selection<SVGGElement, TrackElementResponse, SVGGElement, unknown>): void {
     // The block is redrawn as a wider, squarer field so it reads as an input.
     blocks.select('.node-shape')
       .attr('x', -CONFIG_BLOCK_HALF_WIDTH)
+      .attr('y', -16)
       .attr('width', CONFIG_BLOCK_HALF_WIDTH * 2)
+      .attr('height', 32)
       .attr('rx', CONFIG_BLOCK_RADIUS)
       .attr('fill', '#ffffff')
       .attr('stroke', '#c15f3c');
@@ -704,6 +858,23 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-size', 12)
       .attr('font-weight', 800)
       .text((station) => station.id);
+  }
+
+  private drawJunctions(
+    svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
+    points: Record<string, Point>,
+  ): void {
+    svg.append('g')
+      .attr('class', 'junctions')
+      .selectAll('circle')
+      .data(JUNCTION_REFERENCES.map((reference) => pointBetween(points, reference, { x: 0, y: 0 })))
+      .join('circle')
+      .attr('cx', (point) => point.x)
+      .attr('cy', (point) => point.y)
+      .attr('r', JUNCTION_RADIUS)
+      .attr('fill', '#faf9f5')
+      .attr('stroke', '#73726c')
+      .attr('stroke-width', 2);
   }
 
   private drawVehicles(): void {

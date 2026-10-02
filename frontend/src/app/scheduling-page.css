@@ -522,6 +522,20 @@ select:focus {
   grid-template-columns: 58px minmax(68px, 0.8fr) minmax(150px, 1fr) minmax(150px, 1fr);
 }
 
+.timeline .table-row:not(.table-head) {
+  padding: 8px 10px;
+  border: 1px solid #f0eee6;
+  border-radius: 6px;
+  background: #fdfcf8;
+}
+
+.timeline .table-row:not(.table-head) span:nth-child(3),
+.timeline .table-row:not(.table-head) span:nth-child(4) {
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .inline-input input {
   max-width: 130px;
 }
@@ -543,6 +557,12 @@ select:focus {
 
 .service-setup > label {
   width: 140px;
+}
+
+.with-vehicle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .vehicle-picker {
@@ -987,9 +1007,45 @@ button.vehicle-option.selected {
   margin-bottom: 8px;
 }
 
+.axis-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: #57564f;
+  font-family: monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.axis-times > :last-child {
+  text-align: right;
+}
+
+.axis-current-time {
+  position: relative;
+  height: 28px;
+}
+
+.axis-time-label {
+  position: absolute;
+  bottom: 4px;
+  max-width: 100%;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #141413;
+  color: #ffffff;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .axis-service.draft {
-  opacity: 0.85;
-  background: #13795b;
+  opacity: 1;
+  background: #c4795c;
   line-height: 20px;
 }
 
@@ -1044,6 +1100,72 @@ button.vehicle-option.selected {
   border-bottom: 1px solid #ebe9e0;
 }
 
+.service-timecard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 8px;
+  color: #141413;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-date,
+.service-duration {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid #d8d6cd;
+  border-radius: 6px;
+  background: #faf9f5;
+  color: #5f5e59;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.service-clock {
+  display: inline-grid;
+  grid-template-columns: auto 34px auto;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #dedbd2;
+  border-left: 3px solid #c4795c;
+  border-radius: 4px;
+  background: #faf9f5;
+  color: #141413;
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.service-clock span {
+  position: relative;
+  height: 2px;
+  margin: 0 8px;
+  background: #a49e91;
+}
+
+.service-clock time {
+  min-width: 0;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.service-clock span::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid #a49e91;
+  border-right: 2px solid #a49e91;
+  transform: translateY(-50%) rotate(45deg);
+}
+
 .service-position {
   position: relative;
   height: 6px;
@@ -1059,7 +1181,7 @@ button.vehicle-option.selected {
   bottom: 0;
   min-width: 3px;
   border-radius: 3px;
-  background: #4e79a7;
+  background: #c4795c;
 }
 
 .service-item:last-child {
@@ -1084,11 +1206,38 @@ button.vehicle-option.selected {
   border-top: 1px solid #ebe9e0;
 }
 
-.vehicle-group-header {
+button.vehicle-group-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: flex-start;
   gap: 10px;
+  width: 100%;
+  min-height: 0;
   margin-bottom: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.vehicle-group-header:hover {
+  background: #f0eee6;
+}
+
+.vehicle-group-header p {
+  margin: 0;
+  color: #73726c;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.fold-mark {
+  width: 12px;
+  color: #73726c;
+  font-size: 12px;
 }
 
 .vehicle-group-header h3 {
@@ -1108,7 +1257,7 @@ button.vehicle-option.selected {
 
 .axis-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 56px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   font-size: 13px;
@@ -1136,7 +1285,7 @@ button.vehicle-option.selected {
   min-width: 3px;
   padding: 0 4px;
   border-right: 1px solid #ffffff;
-  background: #4e79a7;
+  background: #c4795c;
   color: #ffffff;
   font-size: 11px;
   font-weight: 800;
@@ -1206,6 +1355,13 @@ button.vehicle-option.selected {
   .form-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .service-clock {
+    grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr);
+    width: 100%;
+    justify-content: center;
+    font-size: 18px;
   }
 
   button,

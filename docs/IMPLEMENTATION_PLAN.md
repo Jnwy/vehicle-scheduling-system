@@ -40,9 +40,9 @@ Last updated: 2026-10-02
 | Docker delivery | Complete | `docker compose up --build` from an empty volume |
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
-Last verified result of the full backend suite: `227 passed`, with one
+Last verified result of the full backend suite: `232 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`175 passed`.
+`186 passed`.
 
 ## How to Verify
 
@@ -80,9 +80,9 @@ index, not a second copy.
 | Intervals are `[start, end)`; touching intervals do not conflict | `DOMAIN_RULES.md` section 6 |
 | A zero-duration service strictly inside another service of the same vehicle is rejected | `DOMAIN_RULES.md` section 6 |
 | Platform timings belong to the service and are keyed by path index | `DOMAIN_RULES.md` section 4 |
-| Saved services keep a timeline snapshot; block changes do not recalculate them | `DOMAIN_RULES.md` rules 4.1 and 4.2, `PERSISTENCE_DESIGN.md` |
+| Saved services keep a timeline snapshot; block changes do not recalculate them. Editing compares the full snapshot with current block times, previews conflicts, and retains a warning beside Save; rejected updates preserve the original snapshot | `DOMAIN_RULES.md` rules 4.1 and 4.2, `PERSISTENCE_DESIGN.md`, `service-timing.ts`, `schedule-editor.component.spec.ts` |
 | Interlocking exclusivity is mandatory and rejected on write (409) | `DOMAIN_RULES.md` section 8, README trade-off 1 |
-| Block occupancy and battery conflicts are rejected on create and update (409); only conflicts the write adds, so schedules saved earlier stay editable; a service that ends in the yard may run low on the way there; deletion is not checked. Changed on 2026-10-02 at the user's request from report-only | `DOMAIN_RULES.md` sections 7 and 8.1, README trade-off 1 |
+| Block occupancy and battery conflicts are rejected on create and update (409); only conflicts the write adds, so schedules saved earlier stay editable; a service that ends in the yard may run low on the way there, but no vehicle may enter a block with less than one battery unit; deletion is not checked. Changed on 2026-10-02 at the user's request from report-only | `DOMAIN_RULES.md` sections 7 and 8.1, README trade-off 1 |
 | The editor map shows every vehicle, with its battery, at the instant the path being built ends; each click advances the map through the time it adds; a timeline bar marks that instant, dragging it moves the whole service and its start time, and the stretches where saving would be rejected are hatched (sampled, at most one check per second); a vehicle in the way and a battery that would break a rule blink; a new service from the yard defaults to the time the vehicle is charged to 80 | README trade-off 4, `frontend/src/app/battery-preview.ts` |
 | Battery model: starts at 80, linear drain per block, fractional yard charging, trailing idle | `DOMAIN_RULES.md` section 8.1 |
 | Deletion is rejected when it breaks the remaining continuity | `DOMAIN_RULES.md` rule 11.1 |
@@ -114,13 +114,42 @@ index, not a second copy.
 
 | 2026-10-02 | Block occupancy and battery conflicts rejected on write; editor previews both and shows vehicles on the map | Backend `224 passed`; frontend `166 passed`; production build and stack restart on the default ports. Browser, without saving anything: vehicles placed at the path-end instant, next stops blocked by an occupied block with the holder blinking, next stops out of the yard blocked at 78 battery units with the battery icon blinking; dragging the timeline bar moved the start time by the same amount, hatched stretches were listed, and a click advanced the vehicles through the added time; clean console. After the timeline bar, the floating status panel, and the exception for a low battery on the way to the yard: backend `227 passed`, frontend `173 passed`. Not checked: 390 px width, reduced motion, the 409 responses against the running stack (covered by the API tests) |
 
+### Block Reconfiguration Update Checkpoint (2026-10-02)
+
+- Completed full-timeline stale detection, including yard-only paths, trailing
+  blocks, and block duration changes that cancel out before a platform.
+- The editor retains a warning beside Save. Existing preview blockers prevent
+  conflicting updates, and a backend 409 retains the draft and saved snapshot.
+- Targeted verification: backend API `4 passed` (three reconfiguration cases
+  plus the existing update/boundary test); frontend `78 passed` across timing,
+  conflict preview, and editor component logic; Angular production build passed.
+- Browser checked against the isolated `_test` database: a B1 increase from
+  10 to 20 seconds showed the IG1 holder and occupied time range, disabled
+  Update, and kept the form warning after dismissing the toast; no console errors.
+- No domain rules changed. Full suites, production restart, and mobile checks
+  were not rerun for this focused fix.
+
+### Scheduling UI and Track Diagram Checkpoint (2026-10-02)
+
+- Completed service time display, vehicle icons, collapsible viewer groups,
+  timeline time labels, and platform dwell controls on the editor map.
+- Blocks are labels on continuous track; branch and merge points are small
+  visual circles with incoming arrows. Both crossovers are straight and
+  symmetric. Block selection and playback use colour without a block box.
+- Junction circles are presentation only; directed topology is unchanged.
+- Final verification before commit: backend `232 passed` with one upstream
+  deprecation warning; frontend `186 passed`; Angular production build passed.
+  Desktop browser checked viewer playback with a vehicle on B1, transparent
+  block hit areas, and straight crossover tracks. Mobile checks were not rerun.
+
 ## Known Limitations
 
 - Bonus 3 (automatic schedule generation) is not implemented.
-- Frontend unit tests cover pure functions only (`service-timing.ts`,
+- Frontend unit tests cover pure functions (`service-timing.ts`,
   `service-conflicts.ts`, `battery-preview.ts`, `start-availability.ts`,
   `path-steps.ts`, `playback.ts`,
-  `schedule-overview.ts`, `page-helpers.ts`). Components,
+  `schedule-overview.ts`, `page-helpers.ts`) and editor component logic for
+  block reconfiguration and rejected updates. Other components,
   templates, and the d3 track map are verified only through the browser, and
   the browser checks are not automated in the repository.
 - The editor previews duplicate backend rules in the frontend. They are

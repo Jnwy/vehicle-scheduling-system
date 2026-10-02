@@ -167,8 +167,9 @@ table.
 put two vehicles in the same interlocking group or on the same block at the
 same time, run a vehicle below 30 battery units outside the yard, or have it
 leave the yard below 80. One exception: a service that ends in the yard may
-run low on the way there, so a vehicle can always drive home to charge; that
-stretch is reported, not rejected.
+run low on the way there, so a vehicle can drive home to charge; that stretch
+is reported, not rejected. It still has to get there: a vehicle with less than
+one unit left cannot enter a block.
 
 **Why.** The assignment states the interlocking groups as a Track Map
 constraint and lists block occupancy and the two battery conflicts under
@@ -200,9 +201,12 @@ between services that nobody edited.
 
 **Cost.** The timeline duplicates data that could be derived. After a block
 change, the same block can appear with two traversal times in one schedule
-until the older services are updated. The Schedule Editor detects such a
-service when it is opened, recalculates its platform times, and shows a
-warning; the Schedule Viewer does not mark it.
+until the older services are updated. The Schedule Editor compares every
+saved timeline interval with the current configuration, including yard-only
+paths and blocks after the last platform. It previews the new times and keeps
+a warning beside Save. Conflicts disable Save; the backend also revalidates
+every update and preserves the original service on rejection. The Schedule
+Viewer does not mark stale services.
 
 **Alternative.** Recalculating every affected service inside the block update
 was rejected as unnecessary transaction complexity for this assignment. If
@@ -322,8 +326,8 @@ Frontend:
 dc run --rm --no-deps frontend npm test
 ```
 
-Last verified on 2026-10-02: backend **227 passed**,
-frontend **175 passed**.
+Last verified on 2026-10-02: backend **232 passed**,
+frontend **186 passed**.
 
 | Suite | Covers |
 | --- | --- |
@@ -333,8 +337,9 @@ frontend **175 passed**.
 | Frontend (Vitest) | Pure functions: platform time derivation, stale snapshot detection, path building, the editor previews, vehicle availability, playback position and battery, viewer grouping |
 
 API tests commit real transactions and clear services, so they require a
-database whose name ends in `_test`. Angular components, templates, and the d3
-map have no unit tests; they were checked in the browser.
+database whose name ends in `_test`. The editor has component logic tests for
+block reconfiguration, save blocking, and preserving a draft after HTTP 409.
+Templates and the d3 map are checked in the browser.
 
 ---
 

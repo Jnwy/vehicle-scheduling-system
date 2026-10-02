@@ -6,15 +6,16 @@ import { forkJoin } from 'rxjs';
 
 import { SchedulingApi } from './scheduling-api.service';
 import { ScheduleAnalysis, ServiceResponse, TopologyResponse, ScheduleConflict } from './models';
-import { errorMessage, formatForDisplay } from './page-helpers';
+import { errorMessage, formatClockTime, formatDuration, formatForDisplay, formatServiceDate, formatTimelineTime } from './page-helpers';
 import { conflictsAt, playbackSliderPosition, scheduleRange, vehicleStatesAt } from './playback';
 import { buildVehicleOverviews, serviceEndTime, servicePositions } from './schedule-overview';
 import { ServicePathStripComponent } from './service-path-strip.component';
 import { TrackMapComponent } from './track-map.component';
+import { VehicleIconComponent } from './vehicle-icon.component';
 
 @Component({
   selector: 'app-schedule-viewer',
-  imports: [DecimalPipe, FormsModule, ServicePathStripComponent, TrackMapComponent],
+  imports: [DecimalPipe, FormsModule, ServicePathStripComponent, TrackMapComponent, VehicleIconComponent],
   templateUrl: './schedule-viewer.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -30,10 +31,15 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
   readonly services = signal<ServiceResponse[]>([]);
   readonly analysis = signal<ScheduleAnalysis>({ startTime: null, endTime: null, vehicles: [], conflicts: [] });
   readonly expandedServiceIds = signal<Set<number>>(new Set<number>());
+  readonly collapsedVehicleIds = signal<Set<string>>(new Set<string>());
   readonly playbackTimeMs = signal<number | null>(null);
   readonly playbackSpeed = signal(60);
   readonly isPlaying = signal(false);
   readonly formatForDisplay = formatForDisplay;
+  readonly formatServiceDate = formatServiceDate;
+  readonly formatClockTime = formatClockTime;
+  readonly formatTimelineTime = formatTimelineTime;
+  readonly formatDuration = formatDuration;
   readonly serviceEndTime = serviceEndTime;
   readonly servicePositions = computed(() => servicePositions(this.services()));
   readonly vehicleOverviews = computed(() => buildVehicleOverviews(this.services(), this.analysis()));
@@ -136,6 +142,16 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
   conflictLabel(conflict: ScheduleConflict): string {
     const vehicles = conflict.vehicleIds.join(', ');
     return `${conflict.conflictType.replaceAll('_', ' ')}: ${vehicles}`;
+  }
+
+  toggleVehicle(vehicleId: string): void {
+    this.collapsedVehicleIds.update((ids) => {
+      const next = new Set(ids);
+      if (!next.delete(vehicleId)) {
+        next.add(vehicleId);
+      }
+      return next;
+    });
   }
 
   toggleTimeline(serviceId: number): void {

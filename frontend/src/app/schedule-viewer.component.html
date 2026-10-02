@@ -40,9 +40,16 @@
 
       @if (analysis().startTime) {
         <div class="vehicle-axes">
+          <div class="axis-row">
+            <span></span>
+            <div class="axis-times">
+              <span>{{ formatClockTime(analysis().startTime!) }}</span>
+              <span>{{ formatTimelineTime(analysis().endTime!, analysis().startTime!) }}</span>
+            </div>
+          </div>
           @for (vehicle of vehicleOverviews(); track vehicle.vehicleId) {
             <div class="axis-row">
-              <strong>{{ vehicle.vehicleId }}</strong>
+              <strong class="with-vehicle"><app-vehicle-icon [vehicleId]="vehicle.vehicleId" [width]="24" />{{ vehicle.vehicleId }}</strong>
               <!-- Clicking an axis moves playback there; the slider above does the same from the keyboard. -->
               <div class="time-axis" role="img" [attr.aria-label]="'Time axis for ' + vehicle.vehicleId" (click)="seekFromAxis($event)">
                 @for (bar of vehicle.serviceBars; track $index) {
@@ -100,19 +107,34 @@
 
       @for (vehicle of services().length > 0 ? vehicleOverviews() : []; track vehicle.vehicleId) {
         <section class="vehicle-group" [attr.aria-label]="'Schedule for ' + vehicle.vehicleId">
-          <div class="vehicle-group-header">
-            <h3>{{ vehicle.vehicleId }}</h3>
+          <!-- The header folds the vehicle's services away. -->
+          <button
+            type="button"
+            class="vehicle-group-header"
+            [attr.aria-expanded]="!collapsedVehicleIds().has(vehicle.vehicleId)"
+            (click)="toggleVehicle(vehicle.vehicleId)"
+          >
+            <span class="fold-mark" aria-hidden="true">{{ collapsedVehicleIds().has(vehicle.vehicleId) ? '▸' : '▾' }}</span>
+            <h3 class="with-vehicle"><app-vehicle-icon [vehicleId]="vehicle.vehicleId" />{{ vehicle.vehicleId }}</h3>
             <p>{{ vehicle.services.length }} service{{ vehicle.services.length === 1 ? '' : 's' }}</p>
-          </div>
-          @if (vehicle.services.length === 0) {
+          </button>
+          @if (vehicle.services.length === 0 && !collapsedVehicleIds().has(vehicle.vehicleId)) {
             <p class="muted vehicle-empty">No services assigned.</p>
           }
-          @for (service of vehicle.services; track service.id) {
+          @for (service of collapsedVehicleIds().has(vehicle.vehicleId) ? [] : vehicle.services; track service.id) {
             <article class="service-item">
               <div class="service-summary">
                 <div>
-                  <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
-                  <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }}</p>
+                  <h3 class="with-vehicle"><app-vehicle-icon [vehicleId]="service.vehicleId" />#{{ service.id }} | {{ service.vehicleId }}</h3>
+                  <div class="service-timecard">
+                    <span class="service-date">{{ formatServiceDate(service.startTime) }}</span>
+                    <div class="service-clock">
+                      <time [attr.datetime]="service.startTime">{{ formatClockTime(service.startTime) }}</time>
+                      <span aria-hidden="true"></span>
+                      <time [attr.datetime]="serviceEndTime(service)">{{ formatTimelineTime(serviceEndTime(service), service.startTime) }}</time>
+                    </div>
+                    <span class="service-duration">{{ formatDuration(service.startTime, serviceEndTime(service)) }}</span>
+                  </div>
                 </div>
                 <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
                   {{ expandedServiceIds().has(service.id) ? 'Hide timeline' : 'Timeline' }}
@@ -123,8 +145,8 @@
                 <div
                   class="service-position"
                   role="img"
-                  [attr.aria-label]="'Service #' + service.id + ' runs ' + formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service)) + ' within the schedule'"
-                  [attr.title]="formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service))"
+                  [attr.aria-label]="'Service #' + service.id + ' runs ' + formatForDisplay(service.startTime) + ' to ' + formatTimelineTime(serviceEndTime(service), service.startTime) + ' within the schedule'"
+                  [attr.title]="formatForDisplay(service.startTime) + ' to ' + formatTimelineTime(serviceEndTime(service), service.startTime)"
                   >
                   <span [style.left.%]="position.leftPercent" [style.width.%]="position.widthPercent"></span>
                 </div>
@@ -141,8 +163,8 @@
                     <div class="table-row">
                       <span>{{ interval.pathIndex }}</span>
                       <strong>{{ interval.elementId }}</strong>
-                      <span>{{ formatForDisplay(interval.startTime) }}</span>
-                      <span>{{ formatForDisplay(interval.endTime) }}</span>
+                      <span>{{ formatTimelineTime(interval.startTime, service.startTime) }}</span>
+                      <span>{{ formatTimelineTime(interval.endTime, interval.startTime) }}</span>
                     </div>
                   }
                 </div>

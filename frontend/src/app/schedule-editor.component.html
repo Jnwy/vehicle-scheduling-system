@@ -41,17 +41,7 @@
             [style.--vehicle-color]="vehicleColor(vehicle.id)"
             (click)="onVehicleChange(vehicle.id)"
           >
-            <svg viewBox="-20 -13 40 26" width="40" height="26" aria-hidden="true">
-              <rect x="-11.5" y="-10" width="7" height="4" rx="1.5" fill="#141413" />
-              <rect x="4.5" y="-10" width="7" height="4" rx="1.5" fill="#141413" />
-              <rect x="-11.5" y="6" width="7" height="4" rx="1.5" fill="#141413" />
-              <rect x="4.5" y="6" width="7" height="4" rx="1.5" fill="#141413" />
-              <rect x="-15" y="-8" width="30" height="16" rx="4.5" fill="var(--vehicle-color)" stroke="#ffffff" stroke-width="1.5" />
-              <rect x="3" y="-5" width="6" height="10" rx="1.5" fill="#eaf2fb" />
-              <rect x="-11.5" y="-4" width="3" height="8" rx="1" fill="#eaf2fb" opacity="0.7" />
-              <circle cx="12.5" cy="-4.5" r="1.3" fill="#ffd966" />
-              <circle cx="12.5" cy="4.5" r="1.3" fill="#ffd966" />
-            </svg>
+            <app-vehicle-icon [vehicleId]="vehicle.id" [width]="40" />
             {{ vehicle.id }}
           </button>
         }
@@ -159,6 +149,13 @@
           />
         </label>
       </div>
+      <div class="axis-current-time">
+        <time
+          class="axis-time-label"
+          [style.left.%]="mapCursorPercent()"
+          [style.transform]="'translateX(-' + mapCursorPercent() + '%)'"
+          >{{ axisTime(instant, range.start) }}</time>
+      </div>
       <div class="time-axis map-axis" role="img" aria-label="This service on the schedule timeline, with the times it cannot be moved to" (click)="moveServiceFromAxis($event)">
         @for (bar of unavailableBars(); track $index) {
           <span class="axis-unavailable" [class.battery]="bar.battery" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
@@ -167,6 +164,10 @@
           <span class="axis-service draft" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" title="This service">This service</span>
         }
         <span class="axis-cursor" [style.left.%]="mapCursorPercent()"></span>
+      </div>
+      <div class="axis-times">
+        <span>{{ axisTime(range.start, range.start) }}</span>
+        <span>{{ axisTime(range.end, range.start) }}</span>
       </div>
       <p class="map-instant">
         Drag the timeline to move this service in time; the start time follows.
@@ -206,6 +207,8 @@
     [conflictElementIds]="conflictElementIds()"
     [blockedElements]="blockedNext()"
     mapPurpose="editor"
+    [endDwell]="endDwell()"
+    (endDwellStepped)="stepEndDwell($event)"
     (elementSelected)="selectPathElement($event)"
     />
   </div>
@@ -257,7 +260,7 @@
             @if (slot.kind === 'busy') {
               <div class="slot busy">
                 <span class="slot-tag">BUSY</span>
-                <span>{{ slotTime(slot.start!) }} → {{ slotTime(slot.end!) }}</span>
+                <span>{{ slotTime(slot.start!) }} → {{ axisTime(slot.end!, slot.start!) }}</span>
                 <span>service #{{ slot.serviceId }} · {{ slot.elementId }} -> {{ slot.nextElementId }}</span>
               </div>
             } @else {
@@ -271,7 +274,7 @@
                   } @else if (slot.end === null) {
                     {{ slotTime(slot.start) }} → …
                   } @else {
-                    {{ slotTime(slot.start) }} → {{ slotTime(slot.end) }}
+                    {{ slotTime(slot.start) }} → {{ axisTime(slot.end, slot.start) }}
                   }
                 </span>
                 <span>
@@ -329,8 +332,14 @@
           </div>
           <div>
             <small>Departure</small>
-            <span>{{ timing.departureTime ? formatForDisplay(timing.departureTime) : '-' }}</span>
+            <span>{{ timing.departureTime ? formatTimelineTime(timing.departureTime, timing.arrivalTime || timing.departureTime) : '-' }}</span>
           </div>
+        </div>
+      }
+
+      @if (blockTimesChanged()) {
+        <div class="notice warning" role="status">
+          Block traversal times changed since this service was saved. Saving applies the current times only if all scheduling checks pass.
         </div>
       }
 
@@ -364,8 +373,16 @@
         <article class="service-item">
           <div class="service-summary">
             <div>
-              <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
-              <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }}</p>
+              <h3 class="with-vehicle"><app-vehicle-icon [vehicleId]="service.vehicleId" />#{{ service.id }} | {{ service.vehicleId }}</h3>
+              <div class="service-timecard">
+                <span class="service-date">{{ formatServiceDate(service.startTime) }}</span>
+                <div class="service-clock">
+                  <time [attr.datetime]="service.startTime">{{ formatClockTime(service.startTime) }}</time>
+                  <span aria-hidden="true"></span>
+                  <time [attr.datetime]="serviceEndTime(service)">{{ formatTimelineTime(serviceEndTime(service), service.startTime) }}</time>
+                </div>
+                <span class="service-duration">{{ formatDuration(service.startTime, serviceEndTime(service)) }}</span>
+              </div>
             </div>
             <div class="service-actions">
               <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
@@ -386,8 +403,8 @@
             <div
               class="service-position"
               role="img"
-              [attr.aria-label]="'Service #' + service.id + ' runs ' + formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service)) + ' within the schedule'"
-              [attr.title]="formatForDisplay(service.startTime) + ' to ' + formatForDisplay(serviceEndTime(service))"
+              [attr.aria-label]="'Service #' + service.id + ' runs ' + formatForDisplay(service.startTime) + ' to ' + formatTimelineTime(serviceEndTime(service), service.startTime) + ' within the schedule'"
+              [attr.title]="formatForDisplay(service.startTime) + ' to ' + formatTimelineTime(serviceEndTime(service), service.startTime)"
               >
               <span [style.left.%]="position.leftPercent" [style.width.%]="position.widthPercent"></span>
             </div>
@@ -407,8 +424,8 @@
                 <div class="table-row">
                   <span>{{ interval.pathIndex }}</span>
                   <strong>{{ interval.elementId }}</strong>
-                  <span>{{ formatForDisplay(interval.startTime) }}</span>
-                  <span>{{ formatForDisplay(interval.endTime) }}</span>
+                  <span>{{ formatTimelineTime(interval.startTime, service.startTime) }}</span>
+                  <span>{{ formatTimelineTime(interval.endTime, interval.startTime) }}</span>
                 </div>
               }
             </div>

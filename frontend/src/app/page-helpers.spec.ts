@@ -7,12 +7,28 @@ import { describe, expect, it } from 'vitest';
 
 import { ScheduleConflict } from './models';
 import {
-  describeConflicts, errorMessage, formatApiError, formatErrorDetail, formatForDisplay, fromDatetimeLocal, toDatetimeLocal,
+  describeConflicts, errorMessage, formatApiError, formatClockTime, formatDuration, formatErrorDetail, formatForDisplay,
+  formatServiceDate, formatTimelineTime, fromDatetimeLocal, toDatetimeLocal,
 } from './page-helpers';
 
 describe('datetime formatting', () => {
+  it('only adds a date when a timeline time changes calendar day', () => {
+    const reference = '2026-12-31T23:59:40+08:00';
+    expect(formatTimelineTime('2026-12-31T23:59:50+08:00', reference)).toBe('23:59:50');
+    expect(formatTimelineTime('2027-01-01T00:00:00+08:00', reference)).toBe('2027-01-01 00:00:00');
+  });
   it('shows an API timestamp as Taipei wall-clock time', () => {
     expect(formatForDisplay('2026-10-03T09:00:20+08:00')).toBe('2026-10-03 09:00:20');
+  });
+
+  it('splits a timestamp into service date and clock time', () => {
+    expect(formatServiceDate('2026-10-03T09:00:20+08:00')).toBe('2026-10-03');
+    expect(formatClockTime('2026-10-03T09:00:20+08:00')).toBe('09:00:20');
+  });
+
+  it('shows service duration in minutes and seconds', () => {
+    expect(formatDuration('2026-10-03T09:00:20+08:00', '2026-10-03T09:02:05+08:00')).toBe('1m 45s');
+    expect(formatDuration('2026-10-03T09:00:20+08:00', '2026-10-03T09:00:35+08:00')).toBe('15s');
   });
 
   it('converts an API timestamp to a datetime-local value with seconds', () => {

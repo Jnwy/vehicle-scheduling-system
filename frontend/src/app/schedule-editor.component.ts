@@ -11,12 +11,15 @@ import {
   secondsToDepartureCharge, timedService, vehicleBatterySegments, withCandidate,
 } from './battery-preview';
 import { PlaybackVehicleState, ScheduleAnalysis, ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
-import { describeConflicts, errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
+import {
+  describeConflicts, errorMessage, formatClockTime, formatDuration, formatForDisplay, formatServiceDate, formatTimelineTime, fromDatetimeLocal, toDatetimeLocal,
+} from './page-helpers';
 import { nextPathSteps, pathLengthProblems, withoutLastStep } from './path-steps';
 import { vehicleStatesAt } from './playback';
 import { serviceEndTime, servicePositions } from './schedule-overview';
 import { ServicePathStripComponent } from './service-path-strip.component';
-import { TrackMapComponent, vehicleColor } from './track-map.component';
+import { EndDwell, TrackMapComponent, vehicleColor } from './track-map.component';
+import { VehicleIconComponent } from './vehicle-icon.component';
 import {
   ScheduleWindow, TrackConflict, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart,
   nextStepTimelines, pathEndpointProblems, savedWindow, trackConflicts, vehicleProblems,
@@ -50,7 +53,7 @@ interface ServiceForm {
 
 @Component({
   selector: 'app-schedule-editor',
-  imports: [FormsModule, RouterLink, ServicePathStripComponent, TrackMapComponent],
+  imports: [FormsModule, RouterLink, ServicePathStripComponent, TrackMapComponent, VehicleIconComponent],
   templateUrl: './schedule-editor.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -71,6 +74,7 @@ export class ScheduleEditorComponent implements OnInit {
   readonly timingError = signal('');
   readonly missingBlockIds = signal<string[]>([]);
   readonly editingServiceId = signal<number | null>(null);
+  readonly blockTimesChanged = signal(false);
   readonly pathSelection = signal<string[]>(['Y']);
   // Live previews of what the backend would reject; see service-conflicts.ts.
   readonly blockers = signal<string[]>([]);
@@ -86,6 +90,8 @@ export class ScheduleEditorComponent implements OnInit {
   // Where every vehicle is, and its battery, at the instant the path being
   // built ends. The vehicle in the form follows the draft path.
   readonly mapVehicles = signal<PlaybackVehicleState[]>([]);
+  // The dwell at the platform the path ends at; the map shows it there with buttons.
+  readonly endDwell = signal<EndDwell | null>(null);
   readonly mapInstant = signal<number | null>(null);
   // The battery the vehicle in the form has left where the path ends.
   readonly draftBattery = signal<string>('');
@@ -123,6 +129,10 @@ export class ScheduleEditorComponent implements OnInit {
   });
   readonly isBusy = computed(() => this.loadingInitial() || this.savingService());
   readonly formatForDisplay = formatForDisplay;
+  readonly formatServiceDate = formatServiceDate;
+  readonly formatClockTime = formatClockTime;
+  readonly formatTimelineTime = formatTimelineTime;
+  readonly formatDuration = formatDuration;
   readonly vehicleColor = vehicleColor;
 
   serviceForm: ServiceForm = this.createEmptyForm();
@@ -253,6 +263,10 @@ export class ScheduleEditorComponent implements OnInit {
     return formatForDisplay(taipeiLocal(instant));
   }
 
+  axisTime(instant: number, reference: number): string {
+    return formatTimelineTime(taipeiLocal(instant), taipeiLocal(reference));
+  }
+
   ngOnInit(): void {
     this.destroyRef.onDestroy(() => this.stopMapAdvance());
     this.refreshAll();
@@ -342,14 +356,14 @@ export class ScheduleEditorComponent implements OnInit {
       const battery = segments.length > 0 ? segments[segments.length - 1].batteryEnd : INITIAL_BATTERY;
       charged += secondsToDepartureCharge(battery) * 1000;
       if (charged > earliest) {
-        notes.push(`Start moved from ${this.slotTime(earliest)} to ${this.slotTime(charged)}: ${vehicleId} returns to `
+        notes.push(`Start moved from ${this.slotTime(earliest)} to ${this.axisTime(charged, earliest)}: ${vehicleId} returns to `
           + `the yard with ${this.batteryUnits(battery)} battery units and must charge to ${MINIMUM_DEPARTURE_BATTERY} before leaving.`);
       }
     }
     const open = earliestOpenStart(elementId, charged, vehicleId, this.services(), this.topology());
     const startTime = taipeiLocal(open.start);
     if (open.avoided !== null) {
-      notes.push(`Start moved from ${this.slotTime(charged)} to ${this.slotTime(open.start)}: `
+      notes.push(`Start moved from ${this.slotTime(charged)} to ${this.axisTime(open.start, charged)}: `
         + `${open.avoided.vehicleId} service #${open.avoided.serviceId} `
         + (open.avoided.group === null
           ? `occupies block ${open.avoided.elementId}`
@@ -404,7 +418,7 @@ export class ScheduleEditorComponent implements OnInit {
         this.showWarning(`${vehicleId} is busy for all of the ${key} you picked, so the start time was left unchanged.`);
       } else if (free !== chosen) {
         this.setStartTime(taipeiLocal(free));
-        this.showWarning(`${vehicleId} is busy at ${this.slotTime(chosen)}, so the start time was set to ${this.slotTime(free)}, the nearest free time in that ${key}.`);
+        this.showWarning(`${vehicleId} is busy at ${this.slotTime(chosen)}, so the start time was set to ${this.axisTime(free, chosen)}, the nearest free time in that ${key}.`);
       }
     }
     if (!this.followVehicleAt(Date.parse(`${this.serviceForm.startTime}+08:00`))) {
@@ -446,6 +460,19 @@ export class ScheduleEditorComponent implements OnInit {
       this.setPathSelection([slot.elementId ?? 'Y']);
     } else {
       this.recalculateTimings();
+    }
+  }
+
+  private endPlatformRow(): TimingFormRow | undefined {
+    const lastIndex = this.pathSelection().length - 1;
+    return this.serviceForm.platformTimings.find((row) => row.pathIndex === lastIndex);
+  }
+
+  // The map's buttons at the platform the path ends at.
+  stepEndDwell(seconds: number): void {
+    const row = this.endPlatformRow();
+    if (row !== undefined) {
+      this.setDwellSeconds(row, Math.max(0, (row.dwellSeconds ?? 0) + seconds));
     }
   }
 
@@ -521,9 +548,10 @@ export class ScheduleEditorComponent implements OnInit {
     };
     this.startParts = splitStartTime(this.serviceForm.startTime);
     this.pathSelection.set([...service.path]);
-    if (savedTimingsAreStale(service, this.topology().elements)) {
+    this.blockTimesChanged.set(savedTimingsAreStale(service, this.topology().elements));
+    if (this.blockTimesChanged()) {
       this.recalculateTimings();
-      this.showWarning(`Editing service #${service.id}. Block traversal times changed since it was saved, so platform times were recalculated. Saving applies the new times.`);
+      this.showWarning(`Editing service #${service.id}. Block traversal times changed since it was saved. Saving applies the new times only if all scheduling checks pass.`);
       return;
     }
     this.recalculateTimings(true);
@@ -537,6 +565,7 @@ export class ScheduleEditorComponent implements OnInit {
 
   resetForm(): void {
     this.originalService = null;
+    this.blockTimesChanged.set(false);
     this.editingServiceId.set(null);
     const vehicleId = this.vehicles()[0]?.id ?? '';
     this.serviceForm = this.createEmptyForm(vehicleId);
@@ -667,6 +696,8 @@ export class ScheduleEditorComponent implements OnInit {
       && previousById.get(element.id)?.traversalSeconds !== element.traversalSeconds,
     );
     this.topology.set(topology);
+    this.blockTimesChanged.set(this.originalService !== null
+      && savedTimingsAreStale(this.originalService, topology.elements));
     if (this.editingServiceId() === null) {
       this.fillPlatformRowsFromPath();
     } else if (changed) {
@@ -723,7 +754,7 @@ export class ScheduleEditorComponent implements OnInit {
       ? timeline[timeline.length - 1].end
       : Date.parse(`${this.serviceForm.startTime}+08:00`);
     if (timeline !== null && vehicleId) {
-      const range = (start: number, end: number) => `${this.slotTime(start)} to ${this.slotTime(end)}`;
+      const range = (start: number, end: number) => `${this.slotTime(start)} to ${this.axisTime(end, start)}`;
       if (timeline.length >= 2) {
         const candidate: ScheduleWindow = {
           serviceId: editingId,
@@ -816,13 +847,17 @@ export class ScheduleEditorComponent implements OnInit {
     this.mapDraftVehicleId = draft === null ? null : vehicleId;
     this.pathEndInstant = range === null ? null : pathEnd;
     const span = range === null ? 0 : range.end - range.start;
-    const range2 = (start: number, end: number) => `${this.slotTime(start)} and ${this.slotTime(end)}`;
+    const range2 = (start: number, end: number) => `${this.slotTime(start)} and ${this.axisTime(end, start)}`;
     // The map redraws whenever an input changes identity, so keep unchanged values.
     const setIfChanged = <T>(target: { (): T; set(value: T): void }, value: T) => {
       if (JSON.stringify(target()) !== JSON.stringify(value)) {
         target.set(value);
       }
     };
+    const endRow = this.endPlatformRow();
+    setIfChanged(this.endDwell, endRow === undefined || endRow.dwellSeconds === null
+      ? null
+      : { elementId: endRow.platformId, seconds: endRow.dwellSeconds });
     setIfChanged(this.blockers, blockers);
     setIfChanged(this.lowBatteryNotes, lowBatteryNotes);
     setIfChanged(this.conflictElementIds, [...conflictIds]);
@@ -928,6 +963,10 @@ export class ScheduleEditorComponent implements OnInit {
       ? `step ${conflict.pathIndex! + 1}`
       : conflict.service !== null ? `service #${conflict.service.serviceId}` : 'while waiting';
     const at = `${conflict.elementId} (${where}) at ${this.slotTime(conflict.start)}`;
+    if (conflict.kind === 'EMPTY_BATTERY') {
+      return `${conflict.vehicleId} would run out of battery: it cannot cross ${at} with `
+        + `${this.batteryUnits(conflict.battery)} battery units left.`;
+    }
     return conflict.kind === 'INSUFFICIENT_CHARGE'
       ? `${conflict.vehicleId} would leave the yard for ${at} with ${this.batteryUnits(conflict.battery)} battery units; `
         + `${MINIMUM_DEPARTURE_BATTERY} are required, which takes ${secondsToDepartureCharge(conflict.battery)} more seconds in the yard.`

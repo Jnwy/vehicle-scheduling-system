@@ -343,15 +343,17 @@ export function derivePlatformTimings(
 }
 
 // A saved timeline is a snapshot; it goes stale when a block on its path is
-// reconfigured. The backend recalculates on update and rejects stale arrivals.
+// reconfigured, including blocks after the last platform or on yard-only paths.
 export function savedTimingsAreStale(
-  service: Pick<ServiceResponse, 'startTime' | 'path' | 'platformTimings'>,
+  service: Pick<ServiceResponse, 'startTime' | 'path' | 'platformTimings' | 'timeline'>,
   elements: TrackElementResponse[],
 ): boolean {
   const byId = new Map(elements.map((element) => [element.id, element]));
   const timingByIndex = new Map(service.platformTimings.map((timing) => [timing.pathIndex, timing]));
+  const intervalByIndex = new Map(service.timeline.map((interval) => [interval.pathIndex, interval]));
   let cursor = Date.parse(service.startTime);
   for (const [pathIndex, id] of service.path.entries()) {
+    const start = cursor;
     const element = byId.get(id);
     if (!element) {
       return false;
@@ -367,6 +369,11 @@ export function savedTimingsAreStale(
         return true;
       }
       cursor = Date.parse(timing.departureTime);
+    }
+    const saved = intervalByIndex.get(pathIndex);
+    if (!saved || saved.elementId !== id
+      || Date.parse(saved.startTime) !== start || Date.parse(saved.endTime) !== cursor) {
+      return true;
     }
   }
   return false;
