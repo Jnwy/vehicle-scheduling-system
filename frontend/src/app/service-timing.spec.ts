@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TrackElementResponse } from './models';
 import {
-  busyTimeOptions, calendarMonthCells, composeStartTime, daysInMonth, derivePlatformTimings, freeInstantWithin, nextFreeInstant, nextStartTime, startPartRange, savedTimingsAreStale, splitStartTime, staleServices, vehicleBusyWindows,
+  busyTimeOptions, calendarMonthCells, composeStartTime, daysInMonth, derivePlatformTimings, freeInstantWithin, nextFreeInstant, nextStartTime, startPartRange, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
   vehicleContinuation, vehiclePositionAt, vehicleSlots,
 } from './service-timing';
 
@@ -394,26 +394,5 @@ describe('savedTimingsAreStale', () => {
 
   it('detects changed block durations even when their total duration stays the same', () => {
     expect(savedTimingsAreStale(saved, elements({ B3: 10, B5: 30 }))).toBe(true);
-  });
-});
-
-describe('staleServices', () => {
-  const loop = (id: number, block: string, minute: string): ServiceResponse => ({
-    id, vehicleId: 'V1', startTime: `2026-10-03T09:${minute}:00+08:00`, path: ['Y', block, 'Y'], platformTimings: [],
-    timeline: [
-      { pathIndex: 0, elementId: 'Y', startTime: `2026-10-03T09:${minute}:00+08:00`, endTime: `2026-10-03T09:${minute}:00+08:00` },
-      { pathIndex: 1, elementId: block, startTime: `2026-10-03T09:${minute}:00+08:00`, endTime: `2026-10-03T09:${minute}:20+08:00` },
-      { pathIndex: 2, elementId: 'Y', startTime: `2026-10-03T09:${minute}:20+08:00`, endTime: `2026-10-03T09:${minute}:20+08:00` },
-    ],
-  });
-
-  it('is empty while every snapshot matches the block configuration', () => {
-    expect(staleServices([loop(1, 'B1', '00'), loop(2, 'B3', '10')], elements())).toEqual([]);
-  });
-
-  it('lists only the services that pass the reconfigured block, in the order they run', () => {
-    const services = [loop(3, 'B1', '30'), loop(2, 'B3', '10'), loop(1, 'B1', '00')];
-
-    expect(staleServices(services, elements({ B1: 25 })).map((service) => service.id)).toEqual([1, 3]);
   });
 });

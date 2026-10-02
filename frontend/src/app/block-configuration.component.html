@@ -13,8 +13,8 @@
     <div>
       <h2>Block traversal times</h2>
       <p>
-        Each block shows its traversal time in seconds. Type a new value and press Enter or leave the field to save it.
-        Saved services keep their existing timeline snapshots.
+        Each block shows its traversal time in seconds. Type new values, check below which saved services they
+        affect, then save them together. Saved services keep their existing timeline snapshots.
       </p>
     </div>
   </div>
@@ -22,25 +22,61 @@
   <app-track-map
     [topology]="topology()"
     mapPurpose="config"
-    (blockTraversalChanged)="saveBlock($event)"
+    (blockTraversalChanged)="stageBlock($event)"
     />
+
+  <div class="block-actions" aria-live="polite">
+    @if (hasPending()) {
+      <span class="block-pending">
+        <strong>Unsaved:</strong>
+        @for (change of pendingDescriptions(); track change) {
+          <span class="block-pending-item">{{ change }}</span>
+        }
+      </span>
+    } @else {
+      <span class="muted">No unsaved changes.</span>
+    }
+    <span class="block-buttons">
+      <button type="button" class="secondary" [disabled]="!hasPending() || saving()" (click)="discardChanges()">Discard</button>
+      <button type="button" [disabled]="!hasPending() || saving()" (click)="saveChanges()">
+        {{ saving() ? 'Saving...' : 'Save changes' }}
+      </button>
+    </span>
+  </div>
 </section>
 
 @if (staleServices().length > 0) {
   <section class="panel stale-panel" aria-live="polite">
-    <h2>Services still using earlier block times</h2>
+    <h2>
+      @if (hasPending()) {
+        Services these changes would leave on earlier block times
+      } @else {
+        Services still using earlier block times
+      }
+    </h2>
     <p>
-      These services were saved before a block on their path was changed, so their timelines keep the earlier times.
-      Open one in the editor to see the new times and any conflict, then update it. Updating one service can move it
-      into the next service of the same vehicle, so check the list again afterwards.
+      A saved service keeps its timeline until it is updated in the editor. Each one is checked as if it alone were
+      updated with the new block times while the others stay as saved.
+      @if (conflictCount() > 0) {
+        <strong>{{ conflictCount() }} of {{ staleServices().length }} would be rejected</strong> and need a new
+        time or path.
+      }
+      Updating one service can move it into the next, so the list changes as services are fixed.
     </p>
     <ul class="stale-list">
       @for (service of staleServices(); track service.id) {
-        <li>
+        <li [class.conflict]="service.conflict">
           <strong>#{{ service.id }} | {{ service.vehicleId }}</strong>
           <span>{{ formatForDisplay(service.startTime) }}</span>
           <span>{{ service.path[0] }} → {{ service.path[service.path.length - 1] }} · {{ service.path.length }} elements</span>
-          <a class="button-link" routerLink="/editor" [queryParams]="{ edit: service.id }">Open in editor</a>
+          <span class="stale-status">
+            {{ service.conflict ? service.conflict.message : 'Can be updated with the new times.' }}
+          </span>
+          @if (hasPending()) {
+            <span class="muted">Save to edit</span>
+          } @else {
+            <a routerLink="/editor" [queryParams]="{ edit: service.id }">Open in editor</a>
+          }
         </li>
       }
     </ul>

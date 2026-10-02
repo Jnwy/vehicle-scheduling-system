@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 
 import {
-  BlockRequest, BlockResponse, ScheduleAnalysis, ServiceRequest, ServiceResponse,
+  BlockChange, BlockChangePreview, BlockRequest, BlockResponse, ScheduleAnalysis, ServiceRequest, ServiceResponse,
   TopologyResponse, VehicleResponse,
 } from './models';
 
@@ -35,6 +35,15 @@ export class SchedulingApi {
 
   saveBlock(blockId: string, request: BlockRequest) {
     return this.http.put<BlockResponse>(`${API_BASE_URL}/blocks/${encodeURIComponent(blockId)}`, request);
+  }
+
+  saveBlocks(changes: BlockChange[]) {
+    return this.http.put<BlockResponse[]>(`${API_BASE_URL}/blocks`, { changes });
+  }
+
+  // Saves nothing: reports the services the block times would leave stale.
+  previewBlocks(changes: BlockChange[]) {
+    return this.http.post<BlockChangePreview>(`${API_BASE_URL}/blocks/preview`, { changes });
   }
 
   createService(request: ServiceRequest) {

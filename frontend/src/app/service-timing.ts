@@ -378,10 +378,3 @@ export function savedTimingsAreStale(
   }
   return false;
 }
-
-// The saved services a block change left behind, in the order they run.
-export function staleServices(services: ServiceResponse[], elements: TrackElementResponse[]): ServiceResponse[] {
-  return services
-    .filter((service) => savedTimingsAreStale(service, elements))
-    .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime) || a.id - b.id);
-}

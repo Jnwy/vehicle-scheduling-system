@@ -33,6 +33,25 @@ export interface BlockRequest {
   traversalSeconds: number;
 }
 
+export interface BlockChange {
+  id: string;
+  traversalSeconds: number;
+}
+
+// A saved service whose snapshot the block times leave stale. `conflict` is
+// why updating it alone would be rejected, or null if the update would pass.
+export interface StaleService {
+  id: number;
+  vehicleId: string;
+  startTime: string;
+  path: string[];
+  conflict: { code: string; message: string } | null;
+}
+
+export interface BlockChangePreview {
+  services: StaleService[];
+}
+
 export interface PlatformTiming {
   pathIndex: number;
   arrivalTime: string;
