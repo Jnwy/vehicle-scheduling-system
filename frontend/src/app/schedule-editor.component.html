@@ -39,11 +39,53 @@
     <div class="start-time">
       <span>Start time (Taipei)</span>
       <div class="start-parts">
-        <!-- One timestamp, one dropdown per part. Options the vehicle is busy for throughout are disabled. -->
-        @for (field of startFields; track field.key) {
-          @if (field.separator) {
-            <span class="start-separator" aria-hidden="true">{{ field.separator }}</span>
+        <!-- One timestamp: a calendar for the date, a dropdown per time part. Days and options the vehicle is busy for throughout are disabled. -->
+        <div class="date-picker">
+          <button
+            type="button"
+            class="date-button"
+            aria-haspopup="dialog"
+            [attr.aria-expanded]="calendarOpen"
+            [disabled]="isBusy()"
+            (click)="toggleCalendar()"
+            >{{ startDate || 'pick a date' }}</button>
+          @if (calendarOpen) {
+            <div class="calendar" role="dialog" aria-label="Choose the start date">
+              <div class="calendar-nav">
+                <button type="button" aria-label="Previous year" (click)="shiftCalendar(-12)">«</button>
+                <button type="button" aria-label="Previous month" (click)="shiftCalendar(-1)">‹</button>
+                <strong>{{ calendarTitle }}</strong>
+                <button type="button" aria-label="Next month" (click)="shiftCalendar(1)">›</button>
+                <button type="button" aria-label="Next year" (click)="shiftCalendar(12)">»</button>
+              </div>
+              <div class="calendar-grid">
+                @for (weekday of weekdays; track weekday) {
+                  <span class="calendar-weekday">{{ weekday }}</span>
+                }
+                @for (day of calendarCells; track $index) {
+                  @if (day === null) {
+                    <span></span>
+                  } @else {
+                    <button
+                      type="button"
+                      [class.selected]="isSelectedDay(day)"
+                      [class.today]="isToday(day)"
+                      [class.partly-busy]="isPartlyBusyDay(day)"
+                      [disabled]="isBusyDay(day)"
+                      (click)="pickDay(day)"
+                      >{{ day }}</button>
+                  }
+                }
+              </div>
+              <p class="calendar-legend">
+                <i class="partly-busy"></i>{{ serviceForm.vehicleId }} has a service
+                <i class="busy"></i>busy all day
+              </p>
+            </div>
           }
+        </div>
+        @for (field of startTimeFields; track field.key) {
+          <span class="start-separator" aria-hidden="true">{{ field.separator }}</span>
           <select
             required
             [name]="'start-' + field.key"
@@ -52,8 +94,12 @@
             [ngModel]="startParts[field.key]"
             (ngModelChange)="onStartPartChange(field.key, $event)"
             >
-            @for (value of startFieldValues(field.key); track value) {
-              <option [ngValue]="value" [disabled]="isBusyOption(field.key, value)">
+            @for (value of field.values; track value) {
+              <option
+                [ngValue]="value"
+                [class.partly-busy]="isPartlyBusyOption(field.key, value)"
+                [disabled]="isBusyOption(field.key, value)"
+                >
                 {{ value < 10 ? '0' + value : value }}
               </option>
             }

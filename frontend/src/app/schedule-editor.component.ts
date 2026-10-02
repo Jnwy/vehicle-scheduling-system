@@ -1,5 +1,5 @@
 
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -16,8 +16,8 @@ import {
   pathEndpointProblems, savedWindow, vehicleProblems,
 } from './service-conflicts';
 import {
-  BusyTimeOptions, StartTimeParts, VehicleBusyWindow, VehicleSlot, busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextStartTime,
-  savedTimingsAreStale, splitStartTime, taipeiLocal, nextFreeInstant, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
+  BusyTimeOptions, StartTimeParts, VehicleBusyWindow, VehicleSlot, busyTimeOptions, calendarMonthCells, composeStartTime, derivePlatformTimings, nextStartTime,
+  savedTimingsAreStale, splitStartTime, startPartRange, freeInstantWithin, taipeiLocal, touchesBusy, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
   vehicleSlots,
 } from './service-timing';
 
@@ -45,6 +45,7 @@ interface ServiceForm {
 export class ScheduleEditorComponent implements OnInit {
   private readonly api = inject(SchedulingApi);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly changeDetector = inject(ChangeDetectorRef);
   private originalService: ServiceResponse | null = null;
   private timingInputsChanged = false;
   readonly loadingInitial = signal(false);
@@ -82,39 +83,89 @@ export class ScheduleEditorComponent implements OnInit {
 
   serviceForm: ServiceForm = this.createEmptyForm();
   startParts: StartTimeParts = splitStartTime(this.serviceForm.startTime);
-  // Rendered as one ISO-like timestamp: 2026 - 10 - 02  12 : 26 : 40.
-  readonly startFields: { key: keyof StartTimeParts; label: string; separator: string }[] = [
-    { key: 'year', label: 'Year', separator: '' },
-    { key: 'month', label: 'Month', separator: '-' },
-    { key: 'day', label: 'Day', separator: '-' },
-    { key: 'hour', label: 'Hour', separator: '·' },
-    { key: 'minute', label: 'Minute', separator: ':' },
-    { key: 'second', label: 'Second', separator: ':' },
+  // Rendered as one ISO-like timestamp: the date opens a calendar, then 12 : 26 : 40 as dropdowns.
+  readonly startTimeFields: { key: 'hour' | 'minute' | 'second'; label: string; separator: string; values: number[] }[] = [
+    { key: 'hour', label: 'Hour', separator: '·', values: Array.from({ length: 24 }, (_, index) => index) },
+    { key: 'minute', label: 'Minute', separator: ':', values: Array.from({ length: 60 }, (_, index) => index) },
+    { key: 'second', label: 'Second', separator: ':', values: Array.from({ length: 60 }, (_, index) => index) },
   ];
-  private readonly currentYear = new Date().getFullYear();
-  private readonly startValues = {
-    year: Array.from({ length: 7 }, (_, index) => this.currentYear - 1 + index),
-    month: Array.from({ length: 12 }, (_, index) => index + 1),
-    day: Array.from({ length: 31 }, (_, index) => index + 1),
-    hour: Array.from({ length: 24 }, (_, index) => index),
-    minute: Array.from({ length: 60 }, (_, index) => index),
-    second: Array.from({ length: 60 }, (_, index) => index),
-  };
 
-  startFieldValues(key: keyof StartTimeParts): number[] {
-    const { year, month } = this.startParts;
-    if (key === 'day') {
-      return this.startValues.day.slice(0, daysInMonth(year, month));
-    }
-    // A saved service may lie outside the offered years; keep its year selectable.
-    if (key === 'year' && year !== null && !this.startValues.year.includes(year)) {
-      return [...this.startValues.year, year].sort((a, b) => a - b);
-    }
-    return this.startValues[key];
+  readonly weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  calendarOpen = false;
+  calendarView = { year: 2026, month: 1 };
+
+  get calendarTitle(): string {
+    return `${this.calendarView.year}-${String(this.calendarView.month).padStart(2, '0')}`;
   }
 
-  isBusyOption(key: keyof StartTimeParts, value: number): boolean {
-    return (key === 'hour' || key === 'minute' || key === 'second') && this.busyTimeOptions[key][value];
+  get calendarCells(): (number | null)[] {
+    return calendarMonthCells(this.calendarView.year, this.calendarView.month);
+  }
+
+  toggleCalendar(): void {
+    this.calendarOpen = !this.calendarOpen;
+    if (this.calendarOpen) {
+      const today = splitStartTime(taipeiLocal(Date.now()));
+      this.calendarView = {
+        year: this.startParts.year ?? today.year!,
+        month: this.startParts.month ?? today.month!,
+      };
+    }
+  }
+
+  shiftCalendar(months: number): void {
+    const index = this.calendarView.year * 12 + this.calendarView.month - 1 + months;
+    this.calendarView = { year: Math.floor(index / 12), month: (index % 12) + 1 };
+  }
+
+  private calendarDate(day: number): string {
+    return `${this.calendarTitle}-${String(day).padStart(2, '0')}`;
+  }
+
+  isSelectedDay(day: number): boolean {
+    return this.calendarDate(day) === this.startDate;
+  }
+
+  isToday(day: number): boolean {
+    return this.calendarDate(day) === taipeiLocal(Date.now()).slice(0, 10);
+  }
+
+  // A day is unavailable only when the vehicle is busy for all of it.
+  isBusyDay(day: number): boolean {
+    const dayStart = Date.parse(`${this.calendarDate(day)}T00:00:00+08:00`);
+    return freeInstantWithin(this.busyWindows, dayStart, dayStart, dayStart + 86400000) === null;
+  }
+
+  pickDay(day: number): void {
+    const previous = { ...this.startParts };
+    this.startParts = { ...this.startParts, year: this.calendarView.year, month: this.calendarView.month, day };
+    this.calendarOpen = false;
+    this.applyStartParts(previous, 'day');
+  }
+
+  @HostListener('document:click', ['$event'])
+  closeCalendarOnOutsideClick(event: MouseEvent): void {
+    if (this.calendarOpen && !(event.target as HTMLElement).closest('.date-picker')) {
+      this.calendarOpen = false;
+    }
+  }
+
+  @HostListener('document:keydown.escape')
+  closeCalendar(): void {
+    this.calendarOpen = false;
+  }
+
+  isBusyOption(key: 'hour' | 'minute' | 'second', value: number): boolean {
+    return this.busyTimeOptions[key][value];
+  }
+
+  isPartlyBusyOption(key: 'hour' | 'minute' | 'second', value: number): boolean {
+    return key !== 'second' && this.busyTimeOptions.partlyBusy[key][value];
+  }
+
+  isPartlyBusyDay(day: number): boolean {
+    const dayStart = Date.parse(`${this.calendarDate(day)}T00:00:00+08:00`);
+    return !this.isBusyDay(day) && touchesBusy(this.busyWindows, dayStart, 86400000);
   }
   private busyTimeOptionsKey = '';
   private busyTimeOptionsValue: BusyTimeOptions = busyTimeOptions([], '', null, null);
@@ -263,20 +314,33 @@ export class ScheduleEditorComponent implements OnInit {
   }
 
   onStartPartChange(key: keyof StartTimeParts, value: number | null): void {
+    const previous = { ...this.startParts };
     this.startParts[key] = value;
-    // Moving from the 31st to a shorter month lands on that month's last day.
-    const { year, month, day } = this.startParts;
-    if (day !== null) {
-      this.startParts.day = Math.min(day, daysInMonth(year, month));
-    }
+    this.applyStartParts(previous, key);
+  }
+
+  private applyStartParts(previous: StartTimeParts, key: keyof StartTimeParts): void {
     this.serviceForm.startTime = composeStartTime(this.startParts);
-    // A combination that lands inside one of the vehicle's services moves on to when it is free again.
+    // The part just chosen is kept. If the combination lands inside one of the
+    // vehicle's services, only the smaller parts move, to a free time within
+    // the chosen one; when it has none, the choice is undone.
     const chosen = Date.parse(`${this.serviceForm.startTime}+08:00`);
-    if (Number.isFinite(chosen)) {
-      const free = nextFreeInstant(this.busyWindows, chosen);
-      if (free !== chosen) {
+    const range = startPartRange(this.startParts, key);
+    if (Number.isFinite(chosen) && range !== null) {
+      const vehicleId = this.serviceForm.vehicleId;
+      const free = freeInstantWithin(this.busyWindows, chosen, range.start, range.end);
+      if (free === null) {
+        this.serviceForm.startTime = composeStartTime(previous);
+        // The dropdown already shows the rejected value; it only redraws when
+        // its model changes, so the old parts are restored on the next tick.
+        setTimeout(() => {
+          this.startParts = previous;
+          this.changeDetector.markForCheck();
+        });
+        this.showWarning(`${vehicleId} is busy for all of the ${key} you picked, so the start time was left unchanged.`);
+      } else if (free !== chosen) {
         this.setStartTime(taipeiLocal(free));
-        this.showWarning(`${this.serviceForm.vehicleId} is busy at ${this.slotTime(chosen)}, so the start time moved to ${this.slotTime(free)}, when it is free again.`);
+        this.showWarning(`${vehicleId} is busy at ${this.slotTime(chosen)}, so the start time was set to ${this.slotTime(free)}, the nearest free time in that ${key}.`);
       }
     }
     // Follow the vehicle only while no path has been built, so typing a time never discards one.

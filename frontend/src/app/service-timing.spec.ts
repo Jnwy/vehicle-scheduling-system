@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TrackElementResponse } from './models';
 import {
-  busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextFreeInstant, nextStartTime, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
+  busyTimeOptions, calendarMonthCells, composeStartTime, daysInMonth, derivePlatformTimings, freeInstantWithin, nextFreeInstant, nextStartTime, startPartRange, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
   vehicleContinuation, vehiclePositionAt, vehicleSlots,
 } from './service-timing';
 
@@ -66,6 +66,15 @@ describe('start time parts', () => {
     expect(daysInMonth(2026, 4)).toBe(30);
     expect(daysInMonth(2026, 12)).toBe(31);
     expect(daysInMonth(null, 2)).toBe(31);
+  });
+
+  it('lays a month out Sunday first', () => {
+    // 1 October 2026 is a Thursday; 1 February 2026 is a Sunday.
+    const october = calendarMonthCells(2026, 10);
+    expect(october.slice(0, 6)).toEqual([null, null, null, null, 1, 2]);
+    expect(october).toHaveLength(4 + 31);
+    expect(calendarMonthCells(2026, 2)[0]).toBe(1);
+    expect(calendarMonthCells(2028, 2).at(-1)).toBe(29);
   });
 
   it('defaults missing seconds to zero', () => {
@@ -148,6 +157,10 @@ describe('vehicle availability', () => {
     expect(busy(busyTimeOptions(windows, '2026-10-03', 8, 0).second)).toEqual(
       Array.from({ length: 30 }, (_, index) => index + 30),
     );
+    // Hours and minutes the services only partly cover stay selectable but are marked.
+    expect(busy(at1002.partlyBusy.hour)).toEqual([8, 10]);
+    expect(busy(at1002.partlyBusy.minute)).toEqual([2]);
+    expect(busy(busyTimeOptions(windows, '2026-10-03', 8, 0).partlyBusy.minute)).toEqual([0]);
     const otherDay = busyTimeOptions(windows, '2026-10-04', 9, 0);
     expect([...otherDay.hour, ...otherDay.minute, ...otherDay.second]).not.toContain(true);
     const noDate = busyTimeOptions(windows, '', null, null);
@@ -163,6 +176,35 @@ describe('vehicle availability', () => {
     expect(nextFreeInstant(windows, at('08:00:29'))).toBe(at('08:00:29'));
     expect(nextFreeInstant(windows, at('08:12:01'))).toBe(at('08:12:01'));
     expect(nextFreeInstant([], at('08:10:10'))).toBe(at('08:10:10'));
+  });
+
+  it('spans the part that was picked, keeping the larger parts', () => {
+    const parts = splitStartTime('2026-10-03T08:10:10');
+    expect(startPartRange(parts, 'minute')).toEqual({ start: at('08:10:00'), end: at('08:11:00') });
+    expect(startPartRange(parts, 'hour')).toEqual({ start: at('08:00:00'), end: at('09:00:00') });
+    expect(startPartRange(parts, 'second')).toEqual({ start: at('08:10:10'), end: at('08:10:11') });
+    expect(startPartRange(parts, 'day')).toEqual({
+      start: Date.parse('2026-10-03T00:00:00+08:00'), end: Date.parse('2026-10-04T00:00:00+08:00'),
+    });
+    expect(startPartRange(splitStartTime('2026-12-31T08:10:10'), 'month')).toEqual({
+      start: Date.parse('2026-12-01T00:00:00+08:00'), end: Date.parse('2027-01-01T00:00:00+08:00'),
+    });
+    expect(startPartRange({ ...parts, second: null }, 'minute')).toBeNull();
+  });
+
+  it('keeps a busy choice inside the picked part, or reports that it has no free time', () => {
+    const windows = vehicleBusyWindows([service(5, 'V1', '08:10:05', '08:12:40', ['Y', 'B1'])], 'V1');
+    const within = (time: string, from: string, to: string) => freeInstantWithin(windows, at(time), at(from), at(to));
+    // Free already: unchanged.
+    expect(within('08:09:10', '08:09:00', '08:10:00')).toBe(at('08:09:10'));
+    // Later in the same minute.
+    expect(within('08:12:10', '08:12:00', '08:13:00')).toBe(at('08:12:40'));
+    // Nothing later in the minute, so the earlier free seconds are used.
+    expect(within('08:10:10', '08:10:00', '08:11:00')).toBe(at('08:10:00'));
+    // The whole minute is busy.
+    expect(within('08:11:10', '08:11:00', '08:12:00')).toBeNull();
+    // The same instant is fine when the picked part is the hour.
+    expect(within('08:11:10', '08:00:00', '09:00:00')).toBe(at('08:12:40'));
   });
 
   it('reports the vehicle position using [start, end) windows', () => {

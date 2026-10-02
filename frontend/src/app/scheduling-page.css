@@ -603,6 +603,137 @@ select:focus {
   color: #b3bcc6;
 }
 
+.date-picker {
+  position: relative;
+}
+
+.date-button,
+.calendar button {
+  min-height: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #235f7a;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.date-button {
+  height: 28px;
+  padding: 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.date-button:hover:not(:disabled),
+.date-button[aria-expanded="true"],
+.calendar button:hover:not(:disabled) {
+  background: #dce8ef;
+}
+
+.calendar {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -8px;
+  z-index: 50;
+  width: 264px;
+  padding: 10px;
+  border: 1px solid #bcc9d6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(23, 32, 42, 0.18);
+}
+
+.calendar-nav {
+  display: grid;
+  grid-template-columns: 28px 28px 1fr 28px 28px;
+  align-items: center;
+  margin-bottom: 6px;
+  color: #17202a;
+  text-align: center;
+}
+
+.calendar-nav button {
+  height: 28px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calendar-weekday {
+  padding: 4px 0;
+  color: #9aa8b5;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.calendar-grid button {
+  height: 30px;
+  padding: 0;
+  color: #17202a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.calendar-grid button.today {
+  outline: 1px solid #235f7a;
+  outline-offset: -1px;
+}
+
+.calendar-grid button.selected {
+  background: #235f7a;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* Amber marks a day, hour or minute that is only partly taken; grey one that is fully taken. */
+.start-parts option.partly-busy {
+  background: #fff3d6;
+  color: #8a6414;
+}
+
+.calendar-grid button.partly-busy:not(.selected) {
+  background: #fff3d6;
+  color: #8a6414;
+}
+
+.calendar-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #607080;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.calendar-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.calendar-legend i.partly-busy {
+  background: #f5d58a;
+}
+
+.calendar-legend i.busy {
+  margin-left: 8px;
+  background: #cfd6dd;
+}
+
+.calendar-grid button:disabled {
+  background: #eceff3;
+  color: #b3bcc6;
+  cursor: not-allowed;
+}
+
 .start-separator {
   padding: 0 2px;
   color: #9aa8b5;
