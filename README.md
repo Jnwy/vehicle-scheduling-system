@@ -38,7 +38,7 @@ docker compose up --build
 | Backend health | <http://localhost:8000/health> |
 
 Backend startup applies the database migrations and seeds the fixed topology
-and the vehicles `V1` and `V2`. Seeding is idempotent and does not overwrite
+and the vehicles `V1` to `V5`. Seeding is idempotent and does not overwrite
 block traversal times that were changed.
 
 The frontend container serves the Angular production build with nginx and
@@ -59,7 +59,7 @@ the test tools is described under [Testing](#testing).
 | Schedule Viewer page | Done | `/schedule`, read-only |
 | Block Configuration page | Done | `/blocks` |
 | Backend unit tests | Done | 206 tests |
-| Bonus 1 — Conflict detection | Done | Block occupancy, low battery, insufficient charge; reported, not rejected |
+| Bonus 1 — Conflict detection | Done | Block occupancy, low battery, insufficient charge; previewed in the editor and rejected on write |
 | Bonus 2 — Interactive track map | Done | d3 map, click-to-build paths, playback with battery and conflicts |
 | Bonus 3 — Auto-generate schedule | Not implemented | |
 
@@ -83,7 +83,7 @@ PostgreSQL holds five tables. Columns and constraints are in
 
 | Table | Purpose |
 | --- | --- |
-| `vehicles` | Seeded vehicle IDs (`V1`, `V2`) |
+| `vehicles` | Seeded vehicle IDs (`V1` to `V5`) |
 | `track_elements` | Yard, platforms, and blocks; blocks carry `traversal_seconds` and `interlocking_group` |
 | `track_connections` | Directed `from_element_id -> to_element_id` edges |
 | `services` | Vehicle and `start_time` of each service |
@@ -129,7 +129,7 @@ Errors:
 | --- | --- |
 | 404 | Unknown service or block |
 | 422 | Invalid input: request shape, unknown vehicle, invalid path, or platform times that do not match the calculated timeline |
-| 409 | Scheduling conflict: vehicle overlap, location discontinuity, or interlocking |
+| 409 | Scheduling conflict: vehicle overlap, location discontinuity, interlocking, block occupancy, or battery |
 
 A service request:
 
@@ -161,25 +161,32 @@ database.
 The four decisions below had a real alternative. Smaller decisions follow in a
 table.
 
-### 1. Interlocking is rejected on write; block occupancy is only reported
+### 1. Every detected conflict is rejected on write
 
-**Decision.** Two vehicles in the same interlocking group at the same time are
-rejected with 409. Two vehicles on the same ungrouped block are accepted and
-reported by `GET /schedule-analysis`, together with the battery conflicts.
+**Decision.** Create and update are rejected with 409 when the service would
+put two vehicles in the same interlocking group or on the same block at the
+same time, run a vehicle below 30 battery units outside the yard, or have it
+leave the yard below 80. One exception: a service that ends in the yard may
+run low on the way there, so a vehicle can always drive home to charge; that
+stretch is reported, not rejected.
 
-**Why.** The assignment states the interlocking groups in the Track Map
-section, next to the connectivity rule, as a constraint. Block occupancy, low
-battery, and insufficient charge are listed under Bonus 1, which asks to
-detect and report. I followed the assignment's own categorization.
+**Why.** The assignment states the interlocking groups as a Track Map
+constraint and lists block occupancy and the two battery conflicts under
+Bonus 1, which asks to detect them. I first only reported the Bonus conflicts
+after saving. That left two vehicles on `B5`, one physical track, merely
+reported while `B1` and `B2`, different tracks, were rejected, and the user
+could not see a conflict coming while building a service. The editor now shows
+it on the map before saving and the backend rejects it.
 
-**Cost.** The result is asymmetric. Two vehicles on `B5` at once share one
-physical track and are only reported, while two vehicles on `B1` and `B2`,
-which are different tracks, are rejected. The weaker physical risk is the one
-that is enforced.
+**Cost.** A new schedule can no longer contain a conflict, so the conflict
+list and markers in the Schedule Viewer only show conflicts saved before the
+rule. The battery rules also restrict paths: a vehicle back in the yard must
+wait there until it is charged to 80, and a path cannot pass through the yard
+and continue, because the yard has no duration inside a path.
 
-**Alternative.** Reporting interlocking as a warning too would remove the
-asymmetry, but would leave a stated constraint unenforced in the mandatory
-scope. In a production system I would reject both on write.
+**Alternative.** Keep the Bonus conflicts as warnings and only preview them in
+the editor. That keeps conflicts available for playback, but lets the user
+save a schedule the system already knows cannot run.
 
 ### 2. Saved services keep a timeline snapshot
 
@@ -224,19 +231,24 @@ into an interlocking constraint the assignment does not describe.
 
 **Decision.** The Schedule Editor works out what the backend would reject
 while the path is being built: vehicle overlap, discontinuity, interlocking,
-and deletions that would disconnect a vehicle's services. The save or delete
-button is disabled while a reason is listed.
+block occupancy, battery, and deletions that would disconnect a vehicle's
+services. The save or delete button is disabled while a reason is listed. The
+map shows every vehicle where it is, with its battery, at the instant the path
+being built ends, and each click advances the map through the time it adds.
+Dragging the timeline bar under the path moves the whole service in time, and
+the times where saving would be rejected are hatched; a vehicle in the way and a battery that
+would break a rule blink.
 
 **Why.** A rejected save only says what was wrong afterwards. Showing the
 reason on the map element it concerns lets the user fix the time or the path
 first.
 
 **Cost.** The rules exist twice: in the backend domain and in
-`frontend/src/app/service-conflicts.ts`. The backend validates every write and
+`frontend/src/app/service-conflicts.ts` and `battery-preview.ts`. The backend validates every write and
 remains the authority. The frontend copy is unit-tested, and a randomized
 comparison over 700 create, update, and delete requests found no
-disagreement, but that comparison is not automated in the repository, so the
-two could drift. The previews also use the services loaded when the page
+disagreement, but that comparison predates the block occupancy and battery
+previews and is not automated in the repository, so the two could drift. The previews also use the services loaded when the page
 opened, so a write from another tab is not seen until the page is reopened.
 
 **Alternative.** A validation endpoint that runs the domain checks without
@@ -259,7 +271,7 @@ than one concurrent editor.
 
 The complete rules are in [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md).
 
-- Vehicles are `V1` and `V2`, and each block defaults to 20 seconds. The
+- Vehicles are `V1` to `V5`, and each block defaults to 20 seconds. The
   assignment gives neither value.
 - Time intervals are `[start, end)`. A vehicle may enter a resource at the
   instant another leaves it.
@@ -302,12 +314,12 @@ Frontend:
 dc run --rm --no-deps frontend npm test
 ```
 
-Last verified on 2026-10-02 from a clean clone: backend **206 passed**,
-frontend **134 passed**.
+Last verified on 2026-10-02: backend **227 passed**,
+frontend **175 passed**.
 
 | Suite | Covers |
 | --- | --- |
-| Domain (`test_path_validation`, `test_timeline`, `test_vehicle_schedule`, `test_interlocking`, `test_service_update`, `test_schedule_analysis`) | Path rules, timeline calculation, interval overlap, vehicle overlap and continuity, interlocking, update and delete validation, block occupancy and battery analysis. No database needed |
+| Domain (`test_path_validation`, `test_timeline`, `test_vehicle_schedule`, `test_interlocking`, `test_service_update`, `test_schedule_analysis`, `test_schedule_conflicts`) | Path rules, timeline calculation, interval overlap, vehicle overlap and continuity, interlocking, update and delete validation, block occupancy and battery analysis and their write validation. No database needed |
 | Persistence (`test_persistence`) | Migrations, idempotent seed, block configuration, repository CRUD, rollback |
 | API (`test_api`) | Status codes and error bodies, rollback of rejected writes, concurrent conflicting writes |
 | Frontend (Vitest) | Pure functions: platform time derivation, stale snapshot detection, path building, the editor previews, vehicle availability, playback position and battery, viewer grouping |
@@ -321,7 +333,8 @@ map have no unit tests; they were checked in the browser.
 ## Known Limitations
 
 - Bonus 3 (automatic schedule generation) is not implemented.
-- General block occupancy and battery conflicts are reported, not rejected
+- Deleting a service is not checked against the battery rules, and conflicts
+  saved before block occupancy and battery were rejected stay in the database
   (see trade-off 1).
 - The editor previews duplicate backend rules and do not see writes from
   another browser tab until the page is reopened (see trade-off 4).

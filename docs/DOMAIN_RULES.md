@@ -341,19 +341,20 @@ end_time
 service_id
 ```
 
-The mandatory scheduling rules currently use:
+The mandatory scheduling rules use:
 
 ```text
 VEHICLE
 INTERLOCKING
 ```
 
-General `BLOCK` occupancy is Bonus detection/reporting. Interlocking group
-exclusivity is a mandatory Track Map constraint, including when vehicles use
-different blocks within the same group.
+Interlocking group exclusivity is a mandatory Track Map constraint, including
+when vehicles use different blocks within the same group. General `BLOCK`
+occupancy comes from Bonus 1; since 2026-10-02 it is also rejected on write
+(section 7).
 
-Bonus schedule analysis derives general `BLOCK` occupancy directly from
-persisted service timeline snapshots. These occupancies are not stored as
+Write validation and schedule analysis derive general `BLOCK` occupancy
+directly from service timeline snapshots. These occupancies are not stored as
 separate database state.
 
 ---
@@ -411,15 +412,20 @@ Conflict.
 
 A block may only be occupied by one service at a time.
 
-If different vehicles occupy the same block during overlapping intervals,
-Bonus analysis detects and reports the occupancy conflict. General block
-occupancy alone does not reject a service write. If the block belongs to an
-interlocking group, mandatory group exclusivity still applies.
+Decision changed on 2026-10-02 at the user's request: create and update reject
+a service whose block interval overlaps another vehicle's interval on the same
+block (409 `BlockOccupancyConflictError`). Until then the conflict was only
+reported after saving, so the user could not see it while building a service.
 
-Bonus conflicts are warnings rather than write validation. The conflicting
-services remain persisted so Schedule Simulation can visualize the conflict.
-This does not change mandatory same-vehicle validation, which still rejects
-overlap or location discontinuity before persistence.
+The comparison is the one used for interlocking: each block occurrence's
+timeline interval, `[start, end)`, touching and empty intervals allowed,
+services of the same vehicle ignored, and an update excludes the service it
+replaces. Platforms and the yard are not exclusive. If the block belongs to an
+interlocking group, the interlocking check runs first and reports the group.
+
+Only the candidate is checked. Services saved before this rule may still share
+a block; schedule analysis keeps reporting those as `BLOCK_OCCUPANCY`, and
+they do not prevent unrelated writes.
 
 ---
 
@@ -475,7 +481,32 @@ Battery state is derived for each vehicle across its ordered services:
 
 Battery below 30 while outside Yard is a low-battery conflict. Battery exactly
 30 is not yet a conflict. Leaving Yard below 80 is an insufficient-charge
-conflict. Both are warning analysis and do not reject persistence.
+conflict.
+
+Decision changed on 2026-10-02 at the user's request: create and update reject
+a write that adds a battery conflict (409 `BatteryConflictError`). Before, both
+were reported only after saving.
+
+- The check covers the vehicles the write touches: the candidate's vehicle
+  and, on an update, the vehicle the service is moved away from. Their whole
+  schedules are simulated, so a service inserted earlier is rejected when it
+  drains a later one.
+- A conflict that begins at the same instant as one already saved for that
+  vehicle is not new and does not reject. A vehicle saved low on battery
+  before this rule can therefore still be sent to the yard.
+- A service that ends in the yard is not rejected for a low battery that
+  begins before it gets there (decided by the user on 2026-10-02). Otherwise a
+  vehicle standing at exactly 30 could never drive home, because every further
+  block takes it below 30. The stretch is still a low-battery conflict in
+  schedule analysis, and the editor points it out without blocking the save.
+  Leaving the yard below 80 afterwards is still rejected.
+- Yard duration is zero, so a path that passes through the yard and continues
+  cannot charge there. After any block the battery is below 80, so such a path
+  is rejected unless the vehicle was charged above 80 beforehand; returning to
+  the yard and leaving again takes two services with charging time between.
+- Deletion is not checked. Deleting a vehicle's first service resets its
+  battery to 80 at the next one, which can lower a battery that had charged
+  above 80 in the yard. Schedule analysis still reports the result.
 
 ---
 
@@ -549,7 +580,9 @@ When creating or updating a service:
 5. validate vehicle time conflicts
 6. validate vehicle location continuity
 7. validate cross-vehicle interlocking group exclusivity
-8. persist only if all checks succeed
+8. validate cross-vehicle block occupancy
+9. validate battery (low battery, insufficient departure charge)
+10. persist only if all checks succeed
 ```
 
 Do not persist an invalid service and then attempt to repair it.
@@ -558,10 +591,11 @@ Existing services are treated as previously validated data. Creation checks
 whether the candidate can be inserted among them. Update validation also checks
 the remaining old schedule after replacing the target (Rule 11.2).
 
-Mandatory same-vehicle and interlocking failures reject the write before
-persistence. Failed create leaves no service or child data; failed update
-preserves the original input and timeline snapshot. General block occupancy
-and battery Bonus analysis detects/reports separately and does not reject writes.
+Same-vehicle, interlocking, block occupancy, and battery failures reject the
+write before persistence. Failed create leaves no service or child data; failed
+update preserves the original input and timeline snapshot. Schedule analysis
+still reports block occupancy and battery conflicts for schedules saved before
+those two rules rejected writes.
 
 ---
 
@@ -631,7 +665,10 @@ Mandatory scheduling tests include:
 
 Bonus domain tests cover general block occupancy, half-open boundaries,
 battery consumption and limits, fractional Yard charging, low battery, and
-insufficient departure charge.
+insufficient departure charge. Write validation tests cover rejection of each
+of the three conflicts, touching boundaries, update self-exclusion, the exact
+thresholds (30 and 80), other vehicles being unaffected, and a conflict saved
+before the rule not blocking the way to the yard.
 
 Interlocking validation tests cover same-group overlaps, touching boundaries,
 update self-exclusion, rollback, and concurrent cross-vehicle writes.

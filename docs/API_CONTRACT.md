@@ -21,7 +21,8 @@ endpoints through its `/api/` prefix.
 
 Vehicles, topology elements, and blocks are returned in natural ID order;
 services are ordered numerically. No vehicle or topology structure CRUD is
-provided, and Bonus conflicts are reported, not enforced.
+provided. Block occupancy and battery conflicts are rejected on write; the
+analysis reports any that were saved before that rule.
 
 ## Service Input and Output
 
@@ -63,7 +64,7 @@ the input is rejected with 422 before saving.
 
 ## Supporting Resources
 
-GET /vehicles returns `[{"id":"V1"},{"id":"V2"}]`.
+GET /vehicles returns `[{"id":"V1"},{"id":"V2"},{"id":"V3"},{"id":"V4"},{"id":"V5"}]`.
 
 GET /topology returns `elements` with `id`, `elementType`, `traversalSeconds`,
 and `interlockingGroup`, plus `connections` with `fromElementId` and
@@ -108,7 +109,7 @@ not reported here because a violating service cannot be saved.
 | --- | --- |
 | 404 | URL service/block resource does not exist (a platform is not a block resource) |
 | 422 | Invalid request shape, vehicle reference, path, timing, or block configuration |
-| 409 | Same-vehicle overlap, location continuity failure, or cross-vehicle interlocking group violation |
+| 409 | Same-vehicle overlap, location continuity failure, cross-vehicle interlocking group or block occupancy violation, or battery conflict |
 | 500 | Unexpected database failure; generic public message |
 
 Domain/application errors return a `detail` object. `code` is the exception
@@ -145,8 +146,19 @@ Different blocks within one group are exclusive, as is the same grouped block.
 Only block intervals are compared, using `[start, end)`; touching endpoints and
 empty intervals are allowed. Updates exclude the original service. A rejected
 create leaves no service/child rows; a rejected update preserves the original.
-General block occupancy outside interlocking groups, low battery, and
-insufficient charge remain Bonus detection/reporting, not 409 write validation.
+After interlocking, create/update rejects two further conflicts with 409:
+
+- `BlockOccupancyConflictError` (`block_id`, `candidate_service_id`,
+  `conflicting_service_id`): another vehicle occupies the same block in an
+  overlapping `[start, end)` interval. Grouped blocks are reported as
+  `InterlockingConflictError` first.
+- `BatteryConflictError` (`conflict_type` `LOW_BATTERY` or
+  `INSUFFICIENT_CHARGE`, `vehicle_id`, `candidate_service_id`): the write would
+  add a battery conflict to a vehicle it touches. A service that ends in the
+  yard is not rejected for running low on the way there. See `DOMAIN_RULES.md`
+  section 8.1 for what counts as added.
+
+Deletion is not checked against either.
 
 ## Transactions and Concurrency
 

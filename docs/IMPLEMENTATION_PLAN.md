@@ -34,14 +34,15 @@ Last updated: 2026-10-02
 | Angular pages: Editor, Viewer, Block Configuration | Complete | Production build; headless browser checks |
 | Frontend unit tests (pure functions) | Complete | Vitest |
 | Bonus 1: conflict detection and battery analysis | Complete | Domain and API tests |
+| Block occupancy and battery conflicts rejected on write, with editor map preview | Complete | Domain, API rollback, and frontend unit tests; browser check |
 | Bonus 2: interactive track map and playback | Complete | Headless browser checks |
 | Bonus 3: automatic schedule generation | Not implemented | Out of scope so far |
 | Docker delivery | Complete | `docker compose up --build` from an empty volume |
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
-Last verified result of the full backend suite: `206 passed`, with one
+Last verified result of the full backend suite: `227 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`134 passed`.
+`175 passed`.
 
 ## How to Verify
 
@@ -81,11 +82,12 @@ index, not a second copy.
 | Platform timings belong to the service and are keyed by path index | `DOMAIN_RULES.md` section 4 |
 | Saved services keep a timeline snapshot; block changes do not recalculate them | `DOMAIN_RULES.md` rules 4.1 and 4.2, `PERSISTENCE_DESIGN.md` |
 | Interlocking exclusivity is mandatory and rejected on write (409) | `DOMAIN_RULES.md` section 8, README trade-off 1 |
-| General block occupancy and battery issues are Bonus reports, not write rejections | `DOMAIN_RULES.md` sections 7 and 8.1 |
+| Block occupancy and battery conflicts are rejected on create and update (409); only conflicts the write adds, so schedules saved earlier stay editable; a service that ends in the yard may run low on the way there; deletion is not checked. Changed on 2026-10-02 at the user's request from report-only | `DOMAIN_RULES.md` sections 7 and 8.1, README trade-off 1 |
+| The editor map shows every vehicle, with its battery, at the instant the path being built ends; each click advances the map through the time it adds; a timeline bar marks that instant, dragging it moves the whole service and its start time, and the stretches where saving would be rejected are hatched (sampled, at most one check per second); a vehicle in the way and a battery that would break a rule blink; a new service from the yard defaults to the time the vehicle is charged to 80 | README trade-off 4, `frontend/src/app/battery-preview.ts` |
 | Battery model: starts at 80, linear drain per block, fractional yard charging, trailing idle | `DOMAIN_RULES.md` section 8.1 |
 | Deletion is rejected when it breaks the remaining continuity | `DOMAIN_RULES.md` rule 11.1 |
 | Update validates the final schedules of both affected vehicles | `DOMAIN_RULES.md` rule 11.2 |
-| Seeded vehicles are `V1` and `V2`; blocks default to 20 seconds | `PERSISTENCE_DESIGN.md`, README |
+| Seeded vehicles are `V1` to `V5`; blocks default to 20 seconds | `PERSISTENCE_DESIGN.md`, README |
 | All writers share one transaction advisory lock | `API_CONTRACT.md`, `PERSISTENCE_DESIGN.md` |
 | Naive datetimes mean Asia/Taipei; responses use `+08:00` | `API_CONTRACT.md` |
 | Default images are production form; development uses `docker-compose.dev.yml` | README |
@@ -110,22 +112,33 @@ index, not a second copy.
 | 2026-10-02 | Path length limit of 200 elements; map visit labels shortened for elements visited more than three times | Found by sending long looping paths to the API: all were accepted, and with a 60,001-element service saved `GET /schedule-analysis` took 51 seconds. After the change: backend `206 passed`; frontend `134 passed`; production build. API returns 422 for 201 elements and accepts 199. Headless browser: labels read `1,13,25 +4` after seven visits; at 205 elements the editor lists the reason and disables saving, and saving is enabled again at 199 |
 | 2026-10-02 | Full check of `main` at `7bf77e3` from a clean clone, then documentation review: README shortened to the submission requirements, `API_CONTRACT.md` and `PERSISTENCE_DESIGN.md` corrected against the code | Backend `206 passed`; frontend `134 passed`; production stack started from an empty volume on alternate ports. 25 API requests covering create, 422, 409, 404, touching intervals, a rejected middle delete, snapshot stability after a block change, and the path length limit all behaved as documented. Browser: three pages with a clean console, a service created from the map, playback, the two Bonus conflicts shown, and the stale-snapshot warning in the editor. Not rerun: the default ports, 390 px width. The documentation changes did not touch code, so no test was rerun after them |
 
+| 2026-10-02 | Block occupancy and battery conflicts rejected on write; editor previews both and shows vehicles on the map | Backend `224 passed`; frontend `166 passed`; production build and stack restart on the default ports. Browser, without saving anything: vehicles placed at the path-end instant, next stops blocked by an occupied block with the holder blinking, next stops out of the yard blocked at 78 battery units with the battery icon blinking; dragging the timeline bar moved the start time by the same amount, hatched stretches were listed, and a click advanced the vehicles through the added time; clean console. After the timeline bar, the floating status panel, and the exception for a low battery on the way to the yard: backend `227 passed`, frontend `173 passed`. Not checked: 390 px width, reduced motion, the 409 responses against the running stack (covered by the API tests) |
+
 ## Known Limitations
 
 - Bonus 3 (automatic schedule generation) is not implemented.
 - Frontend unit tests cover pure functions only (`service-timing.ts`,
-  `service-conflicts.ts`, `path-steps.ts`, `playback.ts`,
+  `service-conflicts.ts`, `battery-preview.ts`, `start-availability.ts`,
+  `path-steps.ts`, `playback.ts`,
   `schedule-overview.ts`, `page-helpers.ts`). Components,
   templates, and the d3 track map are verified only through the browser, and
   the browser checks are not automated in the repository.
 - The editor previews duplicate backend rules in the frontend. They are
   unit-tested and were compared with the API once by a randomized run, but
-  that comparison is not in the repository. They use the services loaded when
+  that comparison is not in the repository and predates the block occupancy
+  and battery previews. They use the services loaded when
   the page opened, and there is no manual refresh, so a write from another
   browser tab is not seen until the page is reopened.
 - A vehicle has no position before its first service, because the model has
   no initial vehicle location. The editor shows `Y` as the starting point for
   a vehicle with no services, although the API accepts any stop.
+- Deleting a service is not checked against the battery rules, and services
+  saved before block occupancy and battery conflicts were rejected are left
+  as they are; the analysis still reports them.
+- The editor map places vehicles at one instant, the end of the path being
+  built. Conflicts are computed over whole intervals, but the picture does not
+  show a vehicle that enters a block later. More than three vehicles on one
+  element are clipped at the top of the map.
 - One global advisory lock serializes every schedule and configuration write.
   This is deliberate for correctness at assignment scale.
 - Playback redraws the whole track map SVG on every frame. With 21 elements
