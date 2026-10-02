@@ -41,7 +41,7 @@ Last updated: 2026-10-02
 
 Last verified result of the full backend suite: `202 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`117 passed`.
+`129 passed`.
 
 ## How to Verify
 
@@ -73,6 +73,8 @@ index, not a second copy.
 | Directed topology; the API receives the complete path; no route finding | `DOMAIN_RULES.md` sections 1-3 |
 | A path starts and ends at a platform or yard; blocks are only passed through (422 `PathEndpointOnBlockError`) | `DOMAIN_RULES.md` rule 3.9, README design decisions |
 | The Schedule Editor offers only the next reachable stops and adds the blocks on the way when that route is unique; otherwise single elements; no reversing in a block back to the same stop. User-approved exception to "no route finding", frontend only | README design decisions, `frontend/src/app/path-steps.ts` |
+| The Schedule Editor previews write validation in the browser (vehicle overlap, continuity, interlocking, blocked next stops, deletion) and disables the save or delete button while a problem is shown; the backend still validates every write | README "Editor Previews of Write Validation", `frontend/src/app/service-conflicts.ts` |
+| A new service defaults to where and when the vehicle's latest service ended, moved later if every way out is held; busy start times are disabled, and a time picked inside a service moves to the nearest free time | README "Editor Previews of Write Validation", `frontend/src/app/service-timing.ts` |
 | Intervals are `[start, end)`; touching intervals do not conflict | `DOMAIN_RULES.md` section 6 |
 | A zero-duration service strictly inside another service of the same vehicle is rejected | `DOMAIN_RULES.md` section 6 |
 | Platform timings belong to the service and are keyed by path index | `DOMAIN_RULES.md` section 4 |
@@ -102,6 +104,8 @@ index, not a second copy.
 | 2026-10-02 | Polish: natural ID order and response schemas for `/vehicles`, `/topology`, `/blocks`; Angular built-in control flow; block input labels | Backend `196 passed`; frontend `66 passed`; production build without warnings; three-page headless browser regression with a clean console |
 | 2026-10-02 | Paths must start and end at a platform or yard; editor builds paths by clicking stops | Backend `202 passed`. Frontend `116 passed`, production build, and a browser check of stop clicks, block fill-in, and undo, all before the last change (reversing to the same stop no longer offered); after it only `path-steps.spec.ts` and `service-conflicts.spec.ts` were rerun (`33 passed`), giving 117 by count |
 | 2026-10-02 | Full check at `8a4a67e` (service form merged into the editor map panel) against the assignment | Backend `202 passed`; frontend `117 passed`; production build; the running production stack serves the same bundle; browser check of the three pages with a clean console, including a stop click, block fill-in, and undo in the editor. Nothing was saved; startup from an empty volume was not rerun |
+| 2026-10-02 | Review of `feat/map-display-polish` at `ff3f3db`: editor previews, vehicle availability, calendar and time dropdowns, time axes in the playback panel, new colour palette | Backend `202 passed`; frontend `129 passed`; production build without warnings. Headless browser run on a development stack with an empty database: stop clicks, undo, change start, busy options disabled, a busy start moved to a free time, blocked next stops, save and delete disabled with reasons, block edits on the map with invalid values rejected, playback, 390 px width; clean console. Randomized comparison of the editor previews with the API over 700 create, update, and delete requests: no disagreement. Not rerun: the production stack and startup on the default ports |
+| 2026-10-02 | Fix: page message on narrow screens (the close button took the full row) | Measured in a headless browser at 390 px and 1440 px; frontend tests and build were not rerun for this one CSS rule |
 
 ## Known Limitations
 
@@ -111,8 +115,14 @@ index, not a second copy.
   `schedule-overview.ts`, `page-helpers.ts`). Components,
   templates, and the d3 track map are verified only through the browser, and
   the browser checks are not automated in the repository.
+- The editor previews duplicate backend rules in the frontend. They are
+  unit-tested and were compared with the API once by a randomized run, but
+  that comparison is not in the repository. They use the services loaded when
+  the page opened, and there is no manual refresh, so a write from another
+  browser tab is not seen until the page is reopened.
 - A vehicle has no position before its first service, because the model has
-  no initial vehicle location.
+  no initial vehicle location. The editor shows `Y` as the starting point for
+  a vehicle with no services, although the API accepts any stop.
 - One global advisory lock serializes every schedule and configuration write.
   This is deliberate for correctness at assignment scale.
 - Playback redraws the whole track map SVG on every frame. With 21 elements
@@ -120,16 +130,18 @@ index, not a second copy.
 
 ## Next Concrete Action
 
-No milestone is in progress. `main` is the only branch on the remote. The work
-since the frontend unit tests milestone (editor map polish, the path endpoint
-rule, stop-based path building) is on the local branch
-`feat/map-display-polish`, which has not been pushed or merged.
+No milestone is in progress. The work since the frontend unit tests milestone
+(the path endpoint rule, stop-based path building, editor previews, vehicle
+availability, start time controls, viewer time axes, and the new palette) is
+on branch `feat/map-display-polish`, which is pushed to the remote and not yet
+merged into `main`. Reviewers read `main`, so merging it is the next step.
 
 Open items, all for the user:
 
-1. Decide whether to implement Bonus 3 (automatic schedule generation). It is
+1. Merge `feat/map-display-polish` into `main`.
+2. Decide whether to implement Bonus 3 (automatic schedule generation). It is
    the only assignment item not implemented.
-2. Before submitting: confirm the reviewer can access the repository, and
+3. Before submitting: confirm the reviewer can access the repository, and
    decide whether `AGENTS.md` and `CLAUDE.md` stay in it.
 
 Nothing else is pending. The headless browser scripts used for the checks in

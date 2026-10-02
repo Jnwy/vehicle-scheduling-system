@@ -148,7 +148,7 @@ dc run --rm --no-deps frontend npm test
 ```
 
 They cover the frontend's pure functions with Vitest and need no browser or
-backend. Last verified result: **117 passed**.
+backend. Last verified result: **129 passed**.
 
 ---
 
@@ -602,6 +602,57 @@ then show only conflicts in imported or legacy data.
 
 ---
 
+## Editor Previews of Write Validation
+
+### Decision
+
+The Schedule Editor works out in the browser what the backend would reject,
+before the user submits:
+
+- same-vehicle overlap and location discontinuity, including the services an
+  update or a deletion would leave disconnected
+- interlocking group conflicts on the chosen path, and next stops whose way
+  in is held by another vehicle, which are drawn as blocked and cannot be
+  clicked
+- a path that starts or ends on a block
+
+While a problem is listed, the save button is disabled, and a deletion that
+would break continuity is disabled with the reason shown. The same data
+drives the start time controls: a new service defaults to where and when the
+vehicle's latest service ended, moved later if every way out is held; times
+when the vehicle is busy are disabled in the time dropdowns and calendar; and
+a time picked inside one of the vehicle's services moves to the nearest free
+time.
+
+### Why
+
+A rejected save only says what was wrong after the fact. Showing the reason
+while the path is being built, on the map element it concerns, lets the user
+fix the time or the path before submitting.
+
+### Trade-off
+
+The rules now exist twice: in the backend domain and in
+`frontend/src/app/service-conflicts.ts`. The backend remains the authority and
+validates every write; the frontend copy uses the same saved timeline
+snapshots and `[start, end)` semantics and is unit-tested. A randomized
+comparison of 700 create, update, and delete requests found no case where the
+preview and the API disagreed, but that comparison is not automated in the
+repository, so the two could drift after a rule change.
+
+Because the save button is disabled, a wrong preview would stop a save the
+API would accept. The previews also use the services loaded when the page
+opened; a write from another browser tab is not seen until the page is
+reopened, and the backend then decides.
+
+### When I Would Change It
+
+With more than one concurrent editor, or more rules, I would add a validation
+endpoint that runs the domain checks without saving and have the editor call
+it, leaving one implementation of the rules.
+
+---
+
 ## Architecture
 
 ```text
@@ -622,9 +673,15 @@ The backend service CRUD, seeded reads, block configuration, error responses,
 timezone handling, and transaction lock are documented in
 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md). Try the API through
 `http://localhost:8000/docs`. The Angular interface at
-`http://localhost:4200` has three pages: Schedule Editor (`/editor`, service
-CRUD and validation feedback), Schedule Viewer (`/schedule`, read-only
-timelines and playback), and Block Configuration (`/blocks`).
+`http://localhost:4200` has three pages:
+
+- Schedule Editor (`/editor`): service create, update, and delete. The path
+  is built by clicking stops on the map; the vehicle's free and busy times
+  are listed; the start time is picked from a calendar and time dropdowns.
+- Schedule Viewer (`/schedule`): read-only. A time axis per vehicle, playback
+  on the map, and each service's saved timeline.
+- Block Configuration (`/blocks`): each block's traversal time is edited in
+  place on the map and saved on Enter or when the field loses focus.
 
 The implemented PostgreSQL schema, timeline snapshot policy, mapping rules, and
 transaction ownership are documented in
@@ -740,6 +797,10 @@ The frontend keeps its calculations in pure functions, tested with Vitest:
 - platform timing derivation from start time, block times, and dwell
 - detection of a saved timeline that is stale after a block change
 - the next stops the editor offers and the blocks a click adds
+- the editor's previews of vehicle overlap, continuity, interlocking, blocked
+  next stops, and deletion
+- vehicle free and busy times, busy start-time options, and moving a chosen
+  start time to a free one
 - playback position, battery interpolation, and active conflicts at an instant
 - Schedule Viewer grouping, time ordering, and time-axis placement
 - datetime and API error formatting
