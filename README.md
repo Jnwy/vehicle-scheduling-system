@@ -441,6 +441,12 @@ The timeline is derived data, so storing it duplicates information that could
 otherwise be recalculated. The write workflow must save the path and timeline
 snapshot atomically to prevent divergence.
 
+After a block's traversal time changes, saved services keep the old duration
+until each one is updated, so the same block can appear with two different
+traversal times in one schedule. The Schedule Viewer does not mark these
+services; only the Schedule Editor detects a stale snapshot when a service is
+opened, recalculates the platform times, and shows a warning before saving.
+
 ### Alternative Considered
 
 Recalculating timelines from current block configuration would keep the schema
