@@ -88,11 +88,12 @@ function connectionLine(
   fromType: string | undefined,
   toType: string | undefined,
   arrowLength: number,
+  startArrowLength: number,
 ): { x1: number; y1: number; x2: number; y2: number } {
   const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
   const ux = (to.x - from.x) / length;
   const uy = (to.y - from.y) / length;
-  const startOffset = outlineDistance(fromType, ux, uy) + NODE_GAP;
+  const startOffset = outlineDistance(fromType, ux, uy) + NODE_GAP + startArrowLength;
   const endOffset = outlineDistance(toType, ux, uy) + NODE_GAP + arrowLength;
   return {
     x1: from.x + ux * startOffset,
@@ -242,17 +243,29 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     // shows through a dimmed, translucent node.
     const elementTypes = new Map(elements.map((element) => [element.id, element.elementType]));
     const isSelectedEdge = (edge: Connection) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`);
+    // A two-way connection reads as one line with a head at each end: both
+    // directions cover the same span, each stopping short of the other's
+    // head. When only one direction is selected, its grey reverse is hidden
+    // so the selected arrow is not layered over it.
+    const allEdges = new Set(this.topology.connections.map((edge) => `${edge.fromElementId}->${edge.toElementId}`));
+    const reverseKey = (edge: Connection) => `${edge.toElementId}->${edge.fromElementId}`;
+    const hiddenByReverse = (edge: Connection) => !isSelectedEdge(edge) && selectedEdges.has(reverseKey(edge));
+    const arrowLengthOf = (edge: Connection) => isSelectedEdge(edge) ? SELECTED_ARROW_LENGTH : ARROW_LENGTH;
+    const sharesSpanWithReverse = (edge: Connection) =>
+      allEdges.has(reverseKey(edge)) && isSelectedEdge(edge) === selectedEdges.has(reverseKey(edge));
     const lineOf = (edge: Connection) => connectionLine(
       points[edge.fromElementId],
       points[edge.toElementId],
       elementTypes.get(edge.fromElementId),
       elementTypes.get(edge.toElementId),
-      isSelectedEdge(edge) ? SELECTED_ARROW_LENGTH : ARROW_LENGTH,
+      arrowLengthOf(edge),
+      sharesSpanWithReverse(edge) ? arrowLengthOf(edge) : 0,
     );
     svg.append('g')
       .attr('class', 'connections')
       .selectAll('line')
-      .data(this.topology.connections.filter((edge) => points[edge.fromElementId] && points[edge.toElementId]))
+      .data(this.topology.connections.filter((edge) =>
+        points[edge.fromElementId] && points[edge.toElementId] && !hiddenByReverse(edge)))
       .join('line')
       .attr('x1', (edge) => lineOf(edge).x1)
       .attr('y1', (edge) => lineOf(edge).y1)
