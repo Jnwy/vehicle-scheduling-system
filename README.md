@@ -673,5 +673,7 @@ The implementation intentionally does not include:
 
 These are kept out of scope to prioritize correctness of the core scheduling model.
 
-Development history and milestone verification records are in
-[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+Current status, verification results, and an index of design decisions are in
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md). The findings of a
+full review and how each was fixed are in
+[`docs/REVIEW_FINDINGS.md`](docs/REVIEW_FINDINGS.md).

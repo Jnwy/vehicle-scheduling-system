@@ -2,19 +2,19 @@
 
 Recorded 2026-10-02 from a full review of `main` at `2d1fe00`.
 
-This document lists the seven problems found in that review and the plan to
-fix them. Each phase needs explicit user authorization before work starts and
-before any commit.
+This document lists the seven problems found in that review, the plan that
+was followed, and the result of each phase. All seven are fixed and merged
+into `main`.
 
 | Finding | Status |
 | --- | --- |
 | F1 | Fixed in `c50754e` |
 | F2 | Fixed in `110afae` |
-| F5 | Fixed in `304093e` |
-| F6 | Fixed in `267704a` |
 | F3 | Fixed in `ef8b6d3` |
 | F4 | Fixed in `bf7d5ae` |
-| F7 | Open |
+| F5 | Fixed in `304093e` |
+| F6 | Fixed in `267704a` |
+| F7 | Fixed in the commit `docs: reduce implementation plan to current status` |
 
 ## Verification Baseline
 
@@ -102,11 +102,11 @@ vehicles are still running. The same applies before a vehicle's first service.
 
 ### F7 — Tracked documents carry process notes
 
-Severity: low.
+Severity: low. Fixed in Phase D.
 
-`docs/IMPLEMENTATION_PLAN.md` still contains handoff details such as
-`stash@{0}`, cherry-pick bookkeeping, and worktree cleanup steps.
-`docs/BONUS_IMPLEMENTATION_HANDOFF.md` is a handoff note, not reference
+`docs/IMPLEMENTATION_PLAN.md` contained handoff details such as `stash@{0}`,
+cherry-pick bookkeeping, and worktree cleanup steps.
+`docs/BONUS_IMPLEMENTATION_HANDOFF.md` was a handoff note, not reference
 documentation.
 
 ## Fix Plan
@@ -247,9 +247,11 @@ Phase C result (2026-10-02):
   Chrome check created a service, got a 409 for an overlap, and saved a block
   time. The same browser check passed against the development override, with
   the backend reloader and Angular watch mode active.
-- Not verified: the published ports 8000 and 4200 themselves, because the
-  check used alternate host ports beside a running stack. The port mapping in
-  `docker-compose.yml` is the only difference.
+- The published ports 8000 and 4200 were not covered by this check, which
+  used alternate host ports beside a running stack. They were verified
+  afterwards on `main` at `ebdf7be`: `docker compose up --build` from an empty
+  volume served `http://localhost:4200` and `http://localhost:8000/health`,
+  and the same headless Chrome check passed.
 
 ### Phase D — Documentation cleanup (F7)
 
@@ -261,7 +263,21 @@ Do this last so it also records the outcome of Phases A-C.
    into the plan or `docs/DOMAIN_RULES.md`, then remove the file.
 3. Update the README test count and any section the earlier phases changed.
 
-## Proposed Commits
+Phase D result (2026-10-02):
+
+- `docs/IMPLEMENTATION_PLAN.md` was rewritten from 710 lines to current
+  status, verification commands, an index of durable decisions, a dated
+  verification history, known limitations, and the handoff procedure. Stash,
+  cherry-pick, worktree, and superseded next-step notes were removed.
+- `docs/BONUS_IMPLEMENTATION_HANDOFF.md` was removed. Its decisions were
+  already recorded in `docs/DOMAIN_RULES.md` sections 7 and 8.1 and in the
+  README; its test counts moved into the verification history.
+- The README pointer to the plan was reworded. The test count was already
+  updated in Phase C.
+- Verification: documentation only; no code changed, so the `191 passed`
+  result from Phase C stands. Links between tracked documents were checked.
+
+## Commits
 
 One commit per finding, in this order:
 
@@ -273,9 +289,9 @@ One commit per finding, in this order:
 6. `chore: serve production builds in Docker images` (F3)
 7. `docs: reduce implementation plan to current status` (F7)
 
-## Open Decisions
+## Decisions
 
-- frontend unit-test setup: add or not (Phase A)
-- F5 time-axis view: approve or keep to grouping and ordering only (Phase B)
-- F4: option A or B (Phase C)
-- F3: approve the minimal production-form scope or leave as is (Phase C)
+- F5 time-axis view: approved and implemented (Phase B)
+- F4: option A (Phase C)
+- F3: the minimal production-form scope was approved (Phase C)
+- frontend unit-test setup: still open; not part of the seven findings
