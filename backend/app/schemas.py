@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.timeline import PlatformTiming
 
@@ -64,6 +64,25 @@ class BlockInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # PostgreSQL INTEGER is bounded; reject overflow as an input error.
     traversalSeconds: int = Field(strict=True, ge=0, le=2147483647)
+
+
+class BlockChangeInput(BlockInput):
+    id: str
+
+
+class BlockChangesInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    changes: list[BlockChangeInput]
+
+    @model_validator(mode="after")
+    def reject_repeated_blocks(self) -> "BlockChangesInput":
+        ids = [change.id for change in self.changes]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each block may appear only once.")
+        return self
+
+    def traversal_seconds(self) -> dict[str, int]:
+        return {change.id: change.traversalSeconds for change in self.changes}
 
 
 class VehicleOutput(BaseModel):
@@ -134,3 +153,20 @@ class ScheduleAnalysisOutput(BaseModel):
     endTime: datetime | None
     vehicles: list[VehicleSimulationOutput]
     conflicts: list[ScheduleConflictOutput]
+
+
+class StaleConflictOutput(BaseModel):
+    code: str
+    message: str
+
+
+class StaleServiceOutput(BaseModel):
+    id: int
+    vehicleId: str
+    startTime: datetime
+    path: list[str]
+    conflict: StaleConflictOutput | None
+
+
+class BlockChangePreviewOutput(BaseModel):
+    services: list[StaleServiceOutput]

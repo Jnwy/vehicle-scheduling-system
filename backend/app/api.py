@@ -4,14 +4,17 @@ from typing import Annotated, Iterator
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
-from app.application import configure_block, delete_service, list_vehicles, save_service
+from app.application import (
+    configure_block, configure_blocks, delete_service, list_vehicles, preview_block_changes, save_service,
+)
 from app.domain.models import RailwayTopology, TrackElement, TrackElementType
 from app.domain.schedule_analysis import analyze_schedule
 from app.domain.vehicle_schedule import ServiceSchedule
 from app.persistence.database import SessionFactory
 from app.persistence.repositories import ServiceNotFoundError, ServiceRepository, TopologyRepository
 from app.schemas import (
-    BlockInput, BlockOutput, PlatformTimingInput, ScheduleAnalysisOutput,
+    BlockChangePreviewOutput, BlockChangesInput, BlockInput, BlockOutput, StaleConflictOutput,
+    StaleServiceOutput, PlatformTimingInput, ScheduleAnalysisOutput,
     ScheduleConflictOutput, ServiceInput, ServiceOutput, SimulationSegmentOutput,
     TimelineOutput, TopologyOutput, TrackConnectionOutput, TrackElementOutput,
     VehicleOutput, VehicleSimulationOutput, taipei_time,
@@ -172,3 +175,23 @@ def update_block(
     block_id: str, data: BlockInput, session: DatabaseSession,
 ) -> dict[str, str | int | None]:
     return configure_block(session, block_id, data.traversalSeconds)
+
+
+@router.put("/blocks", response_model=list[BlockOutput])
+def update_blocks(
+    data: BlockChangesInput, session: DatabaseSession,
+) -> list[dict[str, str | int | None]]:
+    return configure_blocks(session, data.traversal_seconds())
+
+
+@router.post("/blocks/preview", response_model=BlockChangePreviewOutput)
+def preview_blocks(data: BlockChangesInput, session: DatabaseSession) -> BlockChangePreviewOutput:
+    return BlockChangePreviewOutput(services=[
+        StaleServiceOutput(
+            id=item.saved.service_id, vehicleId=item.saved.vehicle_id,
+            startTime=taipei_time(item.saved.start_time), path=list(item.saved.path),
+            conflict=None if item.conflict is None else StaleConflictOutput(
+                code=type(item.conflict).__name__, message=str(item.conflict)),
+        )
+        for item in preview_block_changes(session, data.traversal_seconds())
+    ])

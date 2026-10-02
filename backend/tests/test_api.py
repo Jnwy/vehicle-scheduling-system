@@ -668,3 +668,85 @@ def test_block_write_waits_for_shared_lock(client):
             assert not future.done()
         assert future.result(timeout=10).status_code == 200
     assert next(item for item in client.get("/blocks").json() if item["id"] == "B1")["traversalSeconds"] == 42
+
+
+def changes(**blocks):
+    return {"changes": [{"id": block_id, "traversalSeconds": seconds} for block_id, seconds in blocks.items()]}
+
+
+def test_block_preview_lists_stale_services_and_saves_nothing(client):
+    first = create(client, path=("Y", "B1", "Y"))
+    create(client, path=("Y", "B2", "Y"), vehicle="V2", start=15)
+    blocks_before = client.get("/blocks").json()
+
+    response = client.post("/blocks/preview", json=changes(B1=20))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"services": [{
+        "id": first["id"], "vehicleId": "V1", "startTime": "2026-10-01T08:00:00+08:00",
+        "path": ["Y", "B1", "Y"],
+        "conflict": {
+            "code": "InterlockingConflictError",
+            "message": response.json()["services"][0]["conflict"]["message"],
+        },
+    }]}
+    assert "IG1" in response.json()["services"][0]["conflict"]["message"]
+    assert client.get("/blocks").json() == blocks_before
+
+
+def test_block_preview_agrees_with_the_update_it_predicts(client):
+    first = create(client, path=("Y", "B1", "Y"))
+    create(client, path=("Y", "B2", "Y"), vehicle="V2", start=20)
+
+    preview = client.post("/blocks/preview", json=changes(B1=20)).json()["services"]
+    assert [(item["id"], item["conflict"]) for item in preview] == [(first["id"], None)]
+
+    assert client.put("/blocks", json=changes(B1=20)).status_code == 200
+    assert client.put(f'/services/{first["id"]}', json=payload(path=("Y", "B1", "Y"))).status_code == 200
+    assert client.post("/blocks/preview", json=changes()).json() == {"services": []}
+
+
+def test_block_preview_without_changes_reports_services_that_are_already_stale(client):
+    first = create(client, path=("Y", "B1", "Y"))
+    client.put("/blocks/B1", json={"traversalSeconds": 20})
+
+    preview = client.post("/blocks/preview", json=changes()).json()["services"]
+
+    assert [(item["id"], item["conflict"]) for item in preview] == [(first["id"], None)]
+
+
+def test_blocks_are_saved_together(client):
+    response = client.put("/blocks", json=changes(B1=21, B5=22))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == [
+        {"id": "B1", "traversalSeconds": 21, "interlockingGroup": "IG1"},
+        {"id": "B5", "traversalSeconds": 22, "interlockingGroup": None},
+    ]
+    saved = {block["id"]: block["traversalSeconds"] for block in client.get("/blocks").json()}
+    assert (saved["B1"], saved["B5"], saved["B2"]) == (21, 22, 10)
+
+
+@pytest.mark.parametrize("unknown", ["B99", "P1A"])
+def test_block_batch_with_an_unknown_block_saves_nothing(client, unknown):
+    before = client.get("/blocks").json()
+
+    response = client.put("/blocks", json=changes(B1=21, **{unknown: 5}))
+
+    assert response.status_code == 404
+    assert client.get("/blocks").json() == before
+    assert client.post("/blocks/preview", json=changes(**{unknown: 5})).status_code == 404
+
+
+@pytest.mark.parametrize("body", [
+    {"changes": [{"id": "B1", "traversalSeconds": -1}]},
+    {"changes": [{"id": "B1", "traversalSeconds": 1.5}]},
+    {"changes": [{"id": "B1", "traversalSeconds": 5}, {"id": "B1", "traversalSeconds": 6}]},
+    {},
+])
+def test_invalid_block_batches_are_rejected(client, body):
+    before = client.get("/blocks").json()
+
+    assert client.put("/blocks", json=body).status_code == 422
+    assert client.post("/blocks/preview", json=body).status_code == 422
+    assert client.get("/blocks").json() == before

@@ -1,18 +1,15 @@
 from datetime import datetime
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.domain.models import RailwayTopology, TrackElementType
-from app.domain.interlocking import validate_interlocking_schedule
+from app.domain.block_reconfiguration import StaleService, stale_services, with_block_times
 from app.domain.path_validation import validate_path
-from app.domain.schedule_conflicts import validate_battery, validate_block_occupancy
+from app.domain.service_write import validate_service_write
 from app.domain.timeline import PlatformTiming, calculate_timeline
-from app.domain.vehicle_schedule import (
-    ServiceSchedule, ServiceScheduleError, validate_service_deletion, validate_service_update,
-    validate_vehicle_schedule,
-)
+from app.domain.vehicle_schedule import ServiceSchedule, ServiceScheduleError, validate_service_deletion
 from app.persistence.models import VehicleRecord
 from app.persistence.repositories import ServiceNotFoundError, ServiceRepository, TopologyRepository
 
@@ -58,14 +55,7 @@ def save_service(
         except OverflowError as error:
             raise ServiceScheduleError("Calculated timeline exceeds the supported datetime range.") from error
         candidate = ServiceSchedule(service_id, vehicle_id, tuple(path), timeline)
-        existing = repository.list()
-        if target is None:
-            validate_vehicle_schedule(candidate, existing)
-        else:
-            validate_service_update(target, candidate, existing)
-        validate_interlocking_schedule(candidate, existing, topology)
-        validate_block_occupancy(candidate, existing, topology)
-        validate_battery(candidate, existing, topology, target)
+        validate_service_write(candidate, repository.list(), topology, target)
         if target is None:
             return repository.create(candidate), topology
         return repository.update(candidate), topology
@@ -94,6 +84,40 @@ def configure_block(
         repository.update_block_traversal_time(block_id, traversal_seconds)
         return {"id": block_id, "traversalSeconds": traversal_seconds,
                 "interlockingGroup": block.interlocking_group}
+
+
+def _require_blocks(topology: RailwayTopology, block_ids: Sequence[str]) -> None:
+    for block_id in block_ids:
+        block = topology.elements.get(block_id)
+        if block is None or block.element_type is not TrackElementType.BLOCK:
+            raise ResourceNotFoundError(f"Block '{block_id}' does not exist.")
+
+
+def preview_block_changes(
+    session: Session, traversal_seconds: Mapping[str, int],
+) -> tuple[StaleService, ...]:
+    """Which saved services the block times would leave stale. Saves nothing."""
+    topology = TopologyRepository(session).get()
+    _require_blocks(topology, list(traversal_seconds))
+    return stale_services(
+        ServiceRepository(session).list(), with_block_times(topology, traversal_seconds),
+    )
+
+
+def configure_blocks(
+    session: Session, traversal_seconds: Mapping[str, int],
+) -> list[dict[str, str | int | None]]:
+    """Saves every block time or none of them."""
+    with session.begin():
+        acquire_write_lock(session)
+        repository = TopologyRepository(session)
+        topology = repository.get()
+        _require_blocks(topology, list(traversal_seconds))
+        for block_id, seconds in traversal_seconds.items():
+            repository.update_block_traversal_time(block_id, seconds)
+        return [{"id": block_id, "traversalSeconds": seconds,
+                 "interlockingGroup": topology.elements[block_id].interlocking_group}
+                for block_id, seconds in traversal_seconds.items()]
 
 
 def list_vehicles(session: Session) -> list[dict[str, str]]:
