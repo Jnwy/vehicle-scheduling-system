@@ -58,7 +58,7 @@ the test tools is described under [Testing](#testing).
 | Schedule Editor page | Done | `/editor` |
 | Schedule Viewer page | Done | `/schedule`, read-only |
 | Block Configuration page | Done | `/blocks` |
-| Backend unit tests | Done | 206 tests |
+| Backend unit tests | Done | 232 tests |
 | Bonus 1 — Conflict detection | Done | Block occupancy, low battery, insufficient charge; previewed in the editor and rejected on write |
 | Bonus 2 — Interactive track map | Done | d3 map, click-to-build paths, playback with battery and conflicts |
 | Bonus 3 — Auto-generate schedule | Not implemented | |
@@ -240,19 +240,20 @@ services. The save or delete button is disabled while a reason is listed. The
 map shows every vehicle where it is, with its battery, at the instant the path
 being built ends, and each click advances the map through the time it adds.
 Dragging the timeline bar under the path moves the whole service in time, and
-the times where saving would be rejected are hatched; a vehicle in the way and a battery that
-would break a rule blink.
+the times where saving would be rejected are hatched; a vehicle in the way and
+a battery that would break a rule blink.
 
 **Why.** A rejected save only says what was wrong afterwards. Showing the
 reason on the map element it concerns lets the user fix the time or the path
 first.
 
 **Cost.** The rules exist twice: in the backend domain and in
-`frontend/src/app/service-conflicts.ts` and `battery-preview.ts`. The backend validates every write and
-remains the authority. The frontend copy is unit-tested, and a randomized
-comparison over 700 create, update, and delete requests found no
-disagreement, but that comparison predates the block occupancy and battery
-previews and is not automated in the repository, so the two could drift. The previews also use the services loaded when the page
+`frontend/src/app/service-conflicts.ts` and `battery-preview.ts`. The backend
+validates every write and remains the authority. The frontend copy is
+unit-tested, and a randomized comparison over 700 create, update, and delete
+requests found no disagreement, but that comparison predates the block
+occupancy and battery previews and is not automated in the repository, so the
+two could drift. The previews also use the services loaded when the page
 opened, so a write from another tab is not seen until the page is reopened.
 
 **Alternative.** A validation endpoint that runs the domain checks without
@@ -327,7 +328,7 @@ dc run --rm --no-deps frontend npm test
 ```
 
 Last verified on 2026-10-02: backend **232 passed**,
-frontend **186 passed**.
+frontend **187 passed**.
 
 | Suite | Covers |
 | --- | --- |

@@ -42,7 +42,7 @@ Last updated: 2026-10-02
 
 Last verified result of the full backend suite: `232 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`186 passed`.
+`187 passed`.
 
 ## How to Verify
 
@@ -142,6 +142,17 @@ index, not a second copy.
   Desktop browser checked viewer playback with a vehicle on B1, transparent
   block hit areas, and straight crossover tracks. Mobile checks were not rerun.
 
+### Pre-Submission Check (2026-10-02)
+
+- Scope: `feat/reject-conflicts-editor-preview` plus the palette, availability
+  slot layout, enter and leave animations, and the playback time label above
+  the viewer cursor.
+- Backend `232 passed` with one upstream deprecation warning; frontend
+  `187 passed`; production frontend image built. The three pages load on the
+  running production stack with a clean console.
+- Not rerun: startup from an empty volume, 390 px width, and saving through
+  the browser.
+
 ## Known Limitations
 
 - Bonus 3 (automatic schedule generation) is not implemented.
@@ -175,7 +186,9 @@ index, not a second copy.
 
 ## Next Concrete Action
 
-No milestone is in progress. `main` holds all completed work.
+No milestone is in progress. The completed work is on
+`feat/reject-conflicts-editor-preview`; it has to be merged into `main` and
+pushed before submission.
 
 Open items, all for the user:
 
