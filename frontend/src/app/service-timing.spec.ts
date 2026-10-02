@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TrackElementResponse } from './models';
-import { derivePlatformTimings, nextStartTime, savedTimingsAreStale } from './service-timing';
+import {
+  composeStartTime, derivePlatformTimings, nextStartTime, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
+  vehicleContinuation, vehiclePositionAt, vehicleSlots,
+} from './service-timing';
 
 function elements(blockSeconds: Record<string, number | null> = {}): TrackElementResponse[] {
   const block = (id: string): TrackElementResponse => ({
@@ -21,6 +24,114 @@ function elements(blockSeconds: Record<string, number | null> = {}): TrackElemen
 }
 
 const dwell = (entries: [number, number | null][]) => new Map(entries);
+
+describe('vehicleContinuation', () => {
+  const service = (vehicleId: string, startTime: string, path: string[], endTime: string) => ({
+    vehicleId,
+    startTime,
+    path,
+    timeline: [{ pathIndex: path.length - 1, elementId: path[path.length - 1], startTime, endTime }],
+  });
+
+  it('returns null when the vehicle has no services', () => {
+    const services = [service('V2', '2026-10-03T08:00:00+08:00', ['Y', 'B1', 'P1A'], '2026-10-03T08:05:00+08:00')];
+    expect(vehicleContinuation(services, 'V1')).toBeNull();
+  });
+
+  it('uses the end time and end location of the latest service, regardless of list order', () => {
+    const services = [
+      service('V1', '2026-10-03T09:00:00+08:00', ['P1A', 'B3', 'P2A'], '2026-10-03T09:10:00+08:00'),
+      service('V1', '2026-10-03T08:00:00+08:00', ['Y', 'B1', 'P1A'], '2026-10-03T08:05:00+08:00'),
+      service('V2', '2026-10-03T10:00:00+08:00', ['Y', 'B1'], '2026-10-03T10:20:00+08:00'),
+    ];
+    expect(vehicleContinuation(services, 'V1')).toEqual({ startTime: '2026-10-03T09:10:00', elementId: 'P2A' });
+  });
+
+  it('rounds a fractional end up to the next whole second', () => {
+    const services = [service('V1', '2026-10-03T08:00:00+08:00', ['Y', 'B1'], '2026-10-03T08:00:20.500+08:00')];
+    expect(vehicleContinuation(services, 'V1')?.startTime).toBe('2026-10-03T08:00:21');
+  });
+});
+
+describe('start time parts', () => {
+  it('splits and recomposes a start time', () => {
+    const parts = splitStartTime('2026-10-03T08:05:09');
+    expect(parts).toEqual({ year: 2026, month: 10, day: 3, hour: 8, minute: 5, second: 9 });
+    expect(composeStartTime(parts)).toBe('2026-10-03T08:05:09');
+  });
+
+  it('defaults missing seconds to zero', () => {
+    expect(splitStartTime('2026-10-03T08:05').second).toBe(0);
+  });
+
+  it('rejects an empty field, a non-existent date, and an out-of-range time', () => {
+    const valid = splitStartTime('2026-02-28T08:00:00');
+    expect(composeStartTime({ ...valid, minute: null })).toBe('');
+    expect(composeStartTime({ ...valid, day: 30 })).toBe('');
+    expect(composeStartTime({ ...valid, hour: 24 })).toBe('');
+    expect(composeStartTime({ ...valid, second: 1.5 })).toBe('');
+  });
+});
+
+describe('vehicle availability', () => {
+  const at = (time: string) => Date.parse(`2026-10-03T${time}+08:00`);
+  const service = (id: number, vehicleId: string, start: string, end: string, path: string[]) => ({
+    id,
+    vehicleId,
+    startTime: `2026-10-03T${start}+08:00`,
+    path,
+    timeline: [{
+      pathIndex: path.length - 1,
+      elementId: path[path.length - 1],
+      startTime: `2026-10-03T${start}+08:00`,
+      endTime: `2026-10-03T${end}+08:00`,
+    }],
+  });
+  const services = [
+    service(2, 'V1', '09:00:00', '09:10:00', ['P1A', 'B3', 'P2A']),
+    service(1, 'V1', '08:00:00', '08:05:00', ['Y', 'B1', 'P1A']),
+    service(3, 'V2', '08:00:00', '10:00:00', ['Y', 'B1']),
+  ];
+
+  it('lists only the vehicle\'s services in time order and can leave one out', () => {
+    expect(vehicleBusyWindows(services, 'V1').map((window) => window.serviceId)).toEqual([1, 2]);
+    expect(vehicleBusyWindows(services, 'V1', 2).map((window) => window.serviceId)).toEqual([1]);
+  });
+
+  it('offers a single open slot for a vehicle without services', () => {
+    expect(vehicleSlots([])).toEqual([
+      { kind: 'free', start: null, end: null, serviceId: null, elementId: null, nextElementId: null },
+    ]);
+  });
+
+  it('alternates free and busy slots with the location the vehicle waits at', () => {
+    const slots = vehicleSlots(vehicleBusyWindows(services, 'V1'));
+    expect(slots.map((slot) => [slot.kind, slot.elementId, slot.nextElementId])).toEqual([
+      ['free', null, 'Y'],
+      ['busy', 'Y', 'P1A'],
+      ['free', 'P1A', 'P1A'],
+      ['busy', 'P1A', 'P2A'],
+      ['free', 'P2A', null],
+    ]);
+    expect(slots[2].start).toBe(at('08:05:00'));
+    expect(slots[2].end).toBe(at('09:00:00'));
+  });
+
+  it('adds no free slot between back-to-back services', () => {
+    const backToBack = [services[1], service(4, 'V1', '08:05:00', '08:20:00', ['P1A', 'B3', 'P2A'])];
+    expect(vehicleSlots(vehicleBusyWindows(backToBack, 'V1')).map((slot) => slot.kind))
+      .toEqual(['free', 'busy', 'busy', 'free']);
+  });
+
+  it('reports the vehicle position using [start, end) windows', () => {
+    const windows = vehicleBusyWindows(services, 'V1');
+    expect(vehiclePositionAt(windows, at('07:00:00'))).toEqual({ busy: null, elementId: null });
+    expect(vehiclePositionAt(windows, at('08:00:00')).busy?.serviceId).toBe(1);
+    expect(vehiclePositionAt(windows, at('08:05:00'))).toEqual({ busy: null, elementId: 'P1A' });
+    expect(vehiclePositionAt(windows, at('09:05:00')).busy?.serviceId).toBe(2);
+    expect(vehiclePositionAt(windows, at('12:00:00'))).toEqual({ busy: null, elementId: 'P2A' });
+  });
+});
 
 describe('nextStartTime', () => {
   it('rounds up to the next five-minute boundary in Taipei wall-clock time', () => {

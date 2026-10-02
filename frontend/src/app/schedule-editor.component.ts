@@ -9,7 +9,11 @@ import { SchedulingApi } from './scheduling-api.service';
 import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
 import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
 import { TrackMapComponent } from './track-map.component';
-import { derivePlatformTimings, nextStartTime, savedTimingsAreStale } from './service-timing';
+import {
+  StartTimeParts, VehicleBusyWindow, VehicleSlot, composeStartTime, derivePlatformTimings, nextStartTime,
+  savedTimingsAreStale, splitStartTime, taipeiLocal, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
+  vehicleSlots,
+} from './service-timing';
 
 interface TimingFormRow {
   pathIndex: number;
@@ -63,6 +67,33 @@ export class ScheduleEditorComponent implements OnInit {
   });
 
   serviceForm: ServiceForm = this.createEmptyForm();
+  startParts: StartTimeParts = splitStartTime(this.serviceForm.startTime);
+  readonly startPartFields: { key: keyof StartTimeParts; label: string; min: number; max: number }[] = [
+    { key: 'year', label: 'Year', min: 1000, max: 9999 },
+    { key: 'month', label: 'Month', min: 1, max: 12 },
+    { key: 'day', label: 'Day', min: 1, max: 31 },
+    { key: 'hour', label: 'Hour', min: 0, max: 23 },
+    { key: 'minute', label: 'Minute', min: 0, max: 59 },
+    { key: 'second', label: 'Second', min: 0, max: 59 },
+  ];
+
+  // The service being edited is left out: it is the one being rescheduled.
+  private get busyWindows(): VehicleBusyWindow[] {
+    return vehicleBusyWindows(this.services(), this.serviceForm.vehicleId, this.editingServiceId());
+  }
+
+  get vehicleSlots(): VehicleSlot[] {
+    return vehicleSlots(this.busyWindows);
+  }
+
+  get busyAtStart(): VehicleBusyWindow | null {
+    const instant = Date.parse(`${this.serviceForm.startTime}+08:00`);
+    return Number.isFinite(instant) ? vehiclePositionAt(this.busyWindows, instant).busy : null;
+  }
+
+  slotTime(instant: number): string {
+    return formatForDisplay(taipeiLocal(instant));
+  }
 
   ngOnInit(): void {
     this.refreshAll();
@@ -82,6 +113,7 @@ export class ScheduleEditorComponent implements OnInit {
         this.services.set(services);
         if (!this.serviceForm.vehicleId && vehicles.length > 0) {
           this.serviceForm.vehicleId = vehicles[0].id;
+          this.startFromVehicleEnd();
         }
         this.loadingInitial.set(false);
       },
@@ -136,9 +168,51 @@ export class ScheduleEditorComponent implements OnInit {
     this.recalculateTimings();
   }
 
-  onStartTimeChange(value: string): void {
+  onVehicleChange(vehicleId: string): void {
+    this.serviceForm.vehicleId = vehicleId;
+    // An edited service keeps its own start; only a new service follows the vehicle.
+    if (this.editingServiceId() === null) {
+      this.startFromVehicleEnd();
+    }
+  }
+
+  // A new service continues from where and when the vehicle's latest service ended.
+  private startFromVehicleEnd(): void {
+    const continuation = vehicleContinuation(this.services(), this.serviceForm.vehicleId);
+    this.setStartTime(continuation?.startTime ?? nextStartTime());
+    this.setPathSelection([continuation?.elementId ?? 'Y']);
+  }
+
+  private setStartTime(value: string): void {
     this.serviceForm.startTime = value;
+    this.startParts = splitStartTime(value);
+  }
+
+  onStartPartChange(key: keyof StartTimeParts, value: number | null): void {
+    this.startParts[key] = value;
+    this.serviceForm.startTime = composeStartTime(this.startParts);
+    // Follow the vehicle only while no path has been built, so typing a time never discards one.
+    if (this.editingServiceId() === null && this.pathSelection().length <= 1) {
+      const instant = Date.parse(`${this.serviceForm.startTime}+08:00`);
+      const position = Number.isFinite(instant) ? vehiclePositionAt(this.busyWindows, instant) : null;
+      if (position !== null && position.busy === null) {
+        this.setPathSelection([position.elementId ?? 'Y']);
+        return;
+      }
+    }
     this.recalculateTimings();
+  }
+
+  useFreeSlot(slot: VehicleSlot): void {
+    if (slot.start === null) {
+      return;
+    }
+    this.setStartTime(taipeiLocal(slot.start));
+    if (this.editingServiceId() === null) {
+      this.setPathSelection([slot.elementId ?? 'Y']);
+    } else {
+      this.recalculateTimings();
+    }
   }
 
   setDwellSeconds(row: TimingFormRow, value: number | null): void {
@@ -212,6 +286,7 @@ export class ScheduleEditorComponent implements OnInit {
         departureTime: timing.departureTime,
       })),
     };
+    this.startParts = splitStartTime(this.serviceForm.startTime);
     this.pathSelection.set([...service.path]);
     if (savedTimingsAreStale(service, this.topology().elements)) {
       this.recalculateTimings();
@@ -232,8 +307,7 @@ export class ScheduleEditorComponent implements OnInit {
     this.editingServiceId.set(null);
     const vehicleId = this.vehicles()[0]?.id ?? '';
     this.serviceForm = this.createEmptyForm(vehicleId);
-    this.pathSelection.set(['Y']);
-    this.recalculateTimings();
+    this.startFromVehicleEnd();
   }
 
   confirmDelete(service: ServiceResponse): void {

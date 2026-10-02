@@ -525,6 +525,58 @@ select:focus {
   gap: 12px;
 }
 
+.start-time {
+  display: grid;
+  gap: 6px;
+}
+
+.start-parts {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(5, 1fr);
+  gap: 6px;
+}
+
+.start-parts label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.start-parts input {
+  width: 100%;
+  min-width: 0;
+}
+
+.vehicle-slots {
+  display: grid;
+  gap: 6px;
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(200px, 1.2fr) 64px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #b9c7d4;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.slot-warning {
+  padding: 8px 10px;
+  border: 1px solid #e8cc8a;
+  border-radius: 8px;
+  background: #fff8e7;
+  color: #72510d;
+}
+
+.slot.busy {
+  border-style: dashed;
+  background: #eceff3;
+  color: #8a96a3;
+}
+
 .timing-row {
   display: grid;
   grid-template-columns: minmax(90px, 0.7fr) minmax(170px, 1fr) minmax(170px, 1fr) auto;
@@ -658,6 +710,7 @@ select:focus {
 
   .form-grid,
   .timing-row,
+  .slot,
   .table-row,
   .timeline .table-row,
   .playback-controls,
