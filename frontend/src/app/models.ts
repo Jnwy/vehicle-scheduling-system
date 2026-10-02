@@ -100,7 +100,10 @@ export interface PlaybackVehicleState {
   vehicleId: string;
   serviceId: number | null;
   elementId: string;
-  nextElementId: string;
+  // The marker is drawn `progress` of the way from one element to the other;
+  // `elementId` remains the element the vehicle occupies.
+  fromElementId: string;
+  toElementId: string;
   progress: number;
   battery: number;
 }

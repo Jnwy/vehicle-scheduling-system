@@ -40,16 +40,54 @@ export function vehicleStatesAt(
     const start = Date.parse(segment.startTime);
     const end = Date.parse(segment.endTime);
     const fraction = end > start ? Math.max(0, Math.min(1, (instant - start) / (end - start))) : 0;
-    const next = vehicle.segments[index + 1];
+    const leg = blockIds.has(segment.elementId)
+      ? blockLeg(
+          segment.elementId,
+          neighbourId(vehicle.segments[index - 1], segment),
+          neighbourId(vehicle.segments[index + 1], segment),
+          fraction,
+          blockIds,
+        )
+      : { fromElementId: segment.elementId, toElementId: segment.elementId, progress: 0 };
     return [{
       vehicleId: vehicle.vehicleId,
       serviceId: segment.serviceId,
       elementId: segment.elementId,
-      nextElementId: blockIds.has(segment.elementId) && next ? next.elementId : segment.elementId,
-      progress: blockIds.has(segment.elementId) ? fraction : 0,
+      ...leg,
       battery: segment.batteryStart + (segment.batteryEnd - segment.batteryStart) * fraction,
     }];
   });
+}
+
+function neighbourId(neighbour: SimulationSegment | undefined, segment: SimulationSegment): string | null {
+  return neighbour && neighbour.elementId !== segment.elementId ? neighbour.elementId : null;
+}
+
+// A block's time is spent travelling in from the previous element, through
+// the block node, and out to the next element, so the marker never jumps.
+// Where two blocks meet, the hand-over point is halfway between their nodes.
+function blockLeg(
+  blockId: string,
+  previousId: string | null,
+  nextId: string | null,
+  fraction: number,
+  blockIds: Set<string>,
+): Pick<PlaybackVehicleState, 'fromElementId' | 'toElementId' | 'progress'> {
+  const entryProgress = previousId !== null && blockIds.has(previousId) ? 0.5 : 0;
+  const exitProgress = nextId !== null && blockIds.has(nextId) ? 0.5 : 1;
+  if (previousId === null && nextId === null) {
+    return { fromElementId: blockId, toElementId: blockId, progress: 0 };
+  }
+  if (previousId === null) {
+    return { fromElementId: blockId, toElementId: nextId!, progress: exitProgress * fraction };
+  }
+  if (nextId === null) {
+    return { fromElementId: previousId, toElementId: blockId, progress: entryProgress + (1 - entryProgress) * fraction };
+  }
+  if (fraction < 0.5) {
+    return { fromElementId: previousId, toElementId: blockId, progress: entryProgress + (1 - entryProgress) * fraction * 2 };
+  }
+  return { fromElementId: blockId, toElementId: nextId, progress: exitProgress * (fraction - 0.5) * 2 };
 }
 
 export function conflictsAt(

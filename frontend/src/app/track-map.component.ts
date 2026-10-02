@@ -402,8 +402,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         // Vehicles on the same element stack upwards so a conflict shows every vehicle.
         const count = elementCounts.get(vehicle.elementId) ?? 0;
         elementCounts.set(vehicle.elementId, count + 1);
-        const start = points[vehicle.elementId];
-        const end = points[vehicle.nextElementId] ?? start;
+        const start = points[vehicle.fromElementId] ?? points[vehicle.elementId];
+        const end = points[vehicle.toElementId] ?? start;
         const x = start.x + (end.x - start.x) * vehicle.progress;
         const y = start.y + (end.y - start.y) * vehicle.progress;
         if (compact) {

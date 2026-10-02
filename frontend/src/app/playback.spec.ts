@@ -10,6 +10,7 @@ const topology: TopologyResponse = {
   elements: [
     { id: 'Y', elementType: 'YARD', traversalSeconds: null, interlockingGroup: null },
     { id: 'B1', elementType: 'BLOCK', traversalSeconds: 20, interlockingGroup: 'IG1' },
+    { id: 'B2', elementType: 'BLOCK', traversalSeconds: 20, interlockingGroup: 'IG1' },
     { id: 'P1A', elementType: 'PLATFORM', traversalSeconds: null, interlockingGroup: null },
   ],
   connections: [],
@@ -59,25 +60,92 @@ describe('vehicleStatesAt', () => {
     expect(vehicleStatesAt(analysis(), topology, null)).toEqual([]);
   });
 
-  it('interpolates position and battery inside a block', () => {
-    const [state] = vehicleStatesAt(analysis(), topology, ms(10));
+  it('enters a block from the previous element during the first half of its time', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(5));
 
     expect(state).toEqual({
-      vehicleId: 'V1', serviceId: 1, elementId: 'B1', nextElementId: 'P1A', progress: 0.5, battery: 79.5,
+      vehicleId: 'V1', serviceId: 1, elementId: 'B1',
+      fromElementId: 'Y', toElementId: 'B1', progress: 0.5, battery: 79.75,
+    });
+  });
+
+  it('leaves a block towards the next element during the second half of its time', () => {
+    const [state] = vehicleStatesAt(analysis(), topology, ms(15));
+
+    expect(state).toEqual({
+      vehicleId: 'V1', serviceId: 1, elementId: 'B1',
+      fromElementId: 'B1', toElementId: 'P1A', progress: 0.5, battery: 79.25,
     });
   });
 
   it('prefers the non-empty segment over a zero-length one at the same instant', () => {
     const [state] = vehicleStatesAt(analysis(), topology, ms(0));
 
-    expect(state.elementId).toBe('B1');
-    expect(state.progress).toBe(0);
+    expect(state).toMatchObject({ elementId: 'B1', fromElementId: 'Y', progress: 0 });
   });
 
   it('keeps a vehicle still on a platform', () => {
     const [state] = vehicleStatesAt(analysis(), topology, ms(30));
 
-    expect(state).toMatchObject({ elementId: 'P1A', nextElementId: 'P1A', progress: 0, battery: 79 });
+    expect(state).toMatchObject({ elementId: 'P1A', fromElementId: 'P1A', toElementId: 'P1A', progress: 0, battery: 79 });
+  });
+
+  it('spends the whole time of a final block travelling in from the previous element', () => {
+    const endingOnBlock = analysis({
+      vehicles: [{
+        vehicleId: 'V1',
+        segments: [segment('P1A', 0, 20, 80, 80), segment('B1', 20, 40, 80, 79)],
+      }],
+    });
+
+    expect(vehicleStatesAt(endingOnBlock, topology, ms(20))[0])
+      .toMatchObject({ elementId: 'B1', fromElementId: 'P1A', toElementId: 'B1', progress: 0 });
+    expect(vehicleStatesAt(endingOnBlock, topology, ms(30))[0])
+      .toMatchObject({ elementId: 'B1', fromElementId: 'P1A', toElementId: 'B1', progress: 0.5 });
+  });
+
+  it('spends the whole time of a first block travelling out to the next element', () => {
+    const startingOnBlock = analysis({
+      vehicles: [{
+        vehicleId: 'V1',
+        segments: [segment('B1', 0, 20, 80, 79), segment('P1A', 20, 40, 79, 79)],
+      }],
+    });
+
+    expect(vehicleStatesAt(startingOnBlock, topology, ms(10))[0])
+      .toMatchObject({ fromElementId: 'B1', toElementId: 'P1A', progress: 0.5 });
+  });
+
+  it('hands over between consecutive blocks halfway between their nodes', () => {
+    const blockToBlock = analysis({
+      vehicles: [{
+        vehicleId: 'V1',
+        segments: [
+          segment('Y', 0, 0, 80, 80),
+          segment('B1', 0, 20, 80, 79),
+          segment('B2', 20, 40, 79, 78),
+          segment('P1A', 40, 50, 78, 78),
+        ],
+      }],
+    });
+
+    // Just before and at the boundary the marker is at the same point on B1 -> B2.
+    expect(vehicleStatesAt(blockToBlock, topology, ms(19))[0])
+      .toMatchObject({ elementId: 'B1', fromElementId: 'B1', toElementId: 'B2' });
+    expect(vehicleStatesAt(blockToBlock, topology, ms(19))[0].progress).toBeCloseTo(0.45);
+    expect(vehicleStatesAt(blockToBlock, topology, ms(20))[0])
+      .toMatchObject({ elementId: 'B2', fromElementId: 'B1', toElementId: 'B2', progress: 0.5 });
+    expect(vehicleStatesAt(blockToBlock, topology, ms(35))[0])
+      .toMatchObject({ elementId: 'B2', fromElementId: 'B2', toElementId: 'P1A', progress: 0.5 });
+  });
+
+  it('keeps a vehicle still on a block with no neighbouring segments', () => {
+    const lone = analysis({
+      vehicles: [{ vehicleId: 'V1', segments: [segment('B1', 0, 20, 80, 79)] }],
+    });
+
+    expect(vehicleStatesAt(lone, topology, ms(10))[0])
+      .toMatchObject({ fromElementId: 'B1', toElementId: 'B1', progress: 0 });
   });
 
   it('uses half-open segments at a boundary', () => {
