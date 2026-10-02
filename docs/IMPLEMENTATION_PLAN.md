@@ -96,8 +96,8 @@ index, not a second copy.
 | 2026-10-01 | Bonus 1 and Bonus 2 with review hardening | `144 passed`; desktop and 390 px browser checks |
 | 2026-10-02 | Mandatory interlocking exclusivity; three routed pages | `178 passed`; startup from a new volume |
 | 2026-10-02 | Review follow-ups F1-F7 | `191 passed`; production and development stacks checked in a headless browser, including the default ports from an empty volume |
-| 2026-10-02 | Polish: natural ID order and response schemas for `/vehicles`, `/topology`, `/blocks`; Angular built-in control flow; block input labels | Backend `196 passed`; frontend `66 passed`; production build without warnings; three-page headless browser regression with a clean console |
 | 2026-10-02 | Frontend unit tests added | `66 passed` through the development override; three seeded logic mutations were each caught; production image builds without test files |
+| 2026-10-02 | Polish: natural ID order and response schemas for `/vehicles`, `/topology`, `/blocks`; Angular built-in control flow; block input labels | Backend `196 passed`; frontend `66 passed`; production build without warnings; three-page headless browser regression with a clean console |
 
 ## Known Limitations
 
@@ -110,11 +110,24 @@ index, not a second copy.
   no initial vehicle location.
 - One global advisory lock serializes every schedule and configuration write.
   This is deliberate for correctness at assignment scale.
+- Playback redraws the whole track map SVG on every frame. With 21 elements
+  this has no visible cost, so it was left as is.
 
 ## Next Concrete Action
 
-No milestone is in progress. The remaining candidate, which needs a user
-decision, is Bonus 3 (automatic schedule generation).
+No milestone is in progress. `main` is the only branch on the remote and holds
+all completed work; start from `main`.
+
+Open items, all for the user:
+
+1. Decide whether to implement Bonus 3 (automatic schedule generation). It is
+   the only assignment item not implemented.
+2. Before submitting: confirm the reviewer can access the repository, and
+   decide whether `AGENTS.md` and `CLAUDE.md` stay in it.
+
+Nothing else is pending. The headless browser scripts used for the checks in
+the verification history were not committed, so a new browser check has to be
+written again or done by hand.
 
 ## Cross-Machine Handoff
 
