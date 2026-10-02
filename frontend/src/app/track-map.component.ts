@@ -9,6 +9,11 @@ interface Point {
   y: number;
 }
 
+export interface BlockTraversalChange {
+  blockId: string;
+  value: string;
+}
+
 const VIEWBOX_WIDTH = 1040;
 const VIEWBOX_HEIGHT = 360;
 // Headroom above the top row so a second stacked vehicle marker is not clipped.
@@ -58,7 +63,7 @@ const POINTS: Record<string, Point> = {
       </p>
     }
     <div class="map-frame" [hidden]="topologyMissing">
-      <svg #svg role="img" [attr.aria-label]="interactive ? 'Service path editing map' : 'Vehicle schedule playback map'"></svg>
+      <svg #svg [attr.role]="mapPurpose === 'config' ? 'group' : 'img'" [attr.aria-label]="ariaLabel"></svg>
     </div>
     <div class="legend" [hidden]="topologyMissing" aria-label="Track map legend">
       <span><i class="yard"></i>Yard</span>
@@ -71,7 +76,9 @@ const POINTS: Record<string, Point> = {
       @if (mapPurpose === 'viewer') {
         <span><i class="vehicle"></i>Playback vehicle position</span>
       }
-      <span><i class="conflict"></i>Conflict</span>
+      @if (mapPurpose !== 'config') {
+        <span><i class="conflict"></i>Conflict</span>
+      }
     </div>
     `,
   styles: [`
@@ -110,8 +117,16 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   @Input() interactive = false;
   @Input() vehicles: PlaybackVehicleState[] = [];
   @Input() conflictElementIds: string[] = [];
-  @Input() mapPurpose: 'editor' | 'viewer' = 'editor';
+  @Input() mapPurpose: 'editor' | 'viewer' | 'config' = 'editor';
   @Output() readonly elementSelected = new EventEmitter<string>();
+  @Output() readonly blockTraversalChanged = new EventEmitter<BlockTraversalChange>();
+
+  get ariaLabel(): string {
+    if (this.mapPurpose === 'config') {
+      return 'Block traversal time configuration map';
+    }
+    return this.interactive ? 'Service path editing map' : 'Vehicle schedule playback map';
+  }
 
   private growingEdge: string | null = null;
 
@@ -149,6 +164,12 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     if (!this.svgRef) {
       return;
     }
+
+    // A redraw replaces the traversal inputs, so remember which one had focus.
+    const active = document.activeElement;
+    const focusedBlockId = active instanceof HTMLElement && this.svgRef.nativeElement.contains(active)
+      ? active.dataset['blockId']
+      : undefined;
 
     const svg = d3.select(this.svgRef.nativeElement);
     const compact = window.matchMedia('(max-width: 680px)').matches;
@@ -348,13 +369,27 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         .attr('stroke-dashoffset', 0);
     }
 
+    const configurable = (element: TrackElementResponse) => this.mapPurpose === 'config' && element.elementType === 'BLOCK';
+
+    // In configuration mode the block label moves above the node to leave
+    // the node itself for the traversal time input.
     node.append('text')
+      .attr('y', (element) => configurable(element) ? -25 : 0)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', '#17202a')
-      .attr('font-size', 14)
+      .attr('font-size', (element) => configurable(element) ? 12 : 14)
       .attr('font-weight', 800)
       .text((element) => element.id);
+
+    if (this.mapPurpose === 'config') {
+      this.drawTraversalInputs(node.filter(configurable));
+      if (focusedBlockId !== undefined) {
+        this.svgRef.nativeElement
+          .querySelector<HTMLInputElement>(`input[data-block-id="${focusedBlockId}"]`)
+          ?.focus();
+      }
+    }
 
     const visits = d3.group(this.selectedPath.map((id, index) => ({ id, index: index + 1 })), (item) => item.id);
     node.filter((element) => visits.has(element.id))
@@ -378,6 +413,38 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .text('edit end');
 
     this.drawVehicles(svg, points, compact);
+  }
+
+  private drawTraversalInputs(blocks: d3.Selection<SVGGElement, TrackElementResponse, SVGGElement, unknown>): void {
+    blocks.select('.node-shape').attr('fill', '#ffffff').attr('stroke', '#235f7a');
+    const emitter = this.blockTraversalChanged;
+    blocks.append('foreignObject')
+      .attr('x', -20)
+      .attr('y', -12)
+      .attr('width', 40)
+      .attr('height', 24)
+      .append('xhtml:input')
+      .attr('type', 'text')
+      .attr('inputmode', 'numeric')
+      .attr('data-block-id', (block) => block.id)
+      .attr('aria-label', (block) => `Traversal seconds for ${block.id}`)
+      .attr('value', (block) => block.traversalSeconds ?? '')
+      // Inline because Angular's scoped component styles do not reach
+      // elements created by d3.
+      .attr('style', 'width:100%;height:100%;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:10px;'
+        + 'background:transparent;color:#17202a;font:800 13px inherit;text-align:center;')
+      .on('change', function (_, block) {
+        emitter.emit({ blockId: block.id, value: (this as HTMLInputElement).value });
+      })
+      .on('keydown', function (event: KeyboardEvent) {
+        // Enter confirms the edit; the change event then fires on blur.
+        if (event.key === 'Enter') {
+          (this as HTMLInputElement).blur();
+        }
+      })
+      .on('focus', function () {
+        (this as HTMLInputElement).select();
+      });
   }
 
   private addMarkers(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {

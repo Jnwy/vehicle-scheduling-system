@@ -1,16 +1,15 @@
 
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
 
 import { SchedulingApi } from './scheduling-api.service';
-import { BlockRequest, BlockResponse, TopologyResponse } from './models';
+import { BlockRequest, TopologyResponse } from './models';
 import { errorMessage } from './page-helpers';
+import { BlockTraversalChange, TrackMapComponent } from './track-map.component';
 
 @Component({
   selector: 'app-block-configuration',
-  imports: [FormsModule],
+  imports: [TrackMapComponent],
   templateUrl: './block-configuration.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -21,19 +20,6 @@ export class BlockConfigurationComponent implements OnInit {
   readonly notice = signal('');
   readonly noticeKind = signal<'success' | 'error' | 'warning'>('success');
   readonly topology = signal<TopologyResponse>({ elements: [], connections: [] });
-  readonly blocks = signal<BlockResponse[]>([]);
-  readonly blockDrafts = signal<Record<string, string>>({});
-  readonly savingBlockId = signal<string | null>(null);
-  readonly isBusy = computed(() => this.loadingInitial() || this.savingBlockId() !== null);
-  readonly topologyGroups = computed(() => {
-    const elements = this.topology().elements;
-
-    return [
-      { label: 'Yards', elements: elements.filter((element) => element.elementType === 'YARD') },
-      { label: 'Platforms', elements: elements.filter((element) => element.elementType === 'PLATFORM') },
-      { label: 'Blocks', elements: elements.filter((element) => element.elementType === 'BLOCK') },
-    ];
-  });
 
   ngOnInit(): void {
     this.refreshAll();
@@ -42,13 +28,9 @@ export class BlockConfigurationComponent implements OnInit {
   refreshAll(): void {
     this.loadingInitial.set(true);
     this.clearNotice();
-    forkJoin({
-      topology: this.api.getTopology(),
-      blocks: this.api.getBlocks(),
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ topology, blocks }) => {
+    this.api.getTopology().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (topology) => {
         this.topology.set(topology);
-        this.applyBlocks(blocks);
         this.loadingInitial.set(false);
       },
       error: (error: unknown) => {
@@ -58,64 +40,36 @@ export class BlockConfigurationComponent implements OnInit {
     });
   }
 
-  private reloadBlocks(successMessage: string): void {
-    forkJoin({
-      topology: this.api.getTopology(),
-      blocks: this.api.getBlocks(),
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ topology, blocks }) => {
-        this.topology.set(topology);
-        this.applyBlocks(blocks);
-        this.savingBlockId.set(null);
-        this.showSuccess(successMessage);
-      },
-      error: (error: unknown) => {
-        this.savingBlockId.set(null);
-        this.showError(error);
-      },
-    });
-  }
+  saveBlock(change: BlockTraversalChange): void {
+    const traversalSeconds = Number(change.value);
 
-  setBlockDraft(blockId: string, value: string | number | null): void {
-    this.blockDrafts.update((drafts) => ({
-      ...drafts,
-      [blockId]: value === null ? '' : String(value),
-    }));
-  }
-
-  restoreEmptyBlockDraft(block: BlockResponse): void {
-    if ((this.blockDrafts()[block.id] ?? '').trim() === '') {
-      this.setBlockDraft(block.id, block.traversalSeconds ?? 20);
-    }
-  }
-
-  saveBlock(block: BlockResponse): void {
-    const draft = this.blockDrafts()[block.id] ?? '';
-    const traversalSeconds = Number(draft);
-
-    if (draft.trim() === '' || !Number.isInteger(traversalSeconds) || traversalSeconds < 0) {
+    if (change.value.trim() === '' || !Number.isInteger(traversalSeconds) || traversalSeconds < 0) {
       this.showErrorMessage('Block traversal time must be a non-negative integer.');
+      this.redrawMap();
       return;
     }
 
     const request: BlockRequest = { traversalSeconds };
-    this.savingBlockId.set(block.id);
-    this.api.saveBlock(block.id, request).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        this.reloadBlocks('Block traversal time saved.');
+    this.api.saveBlock(change.blockId, request).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (block) => {
+        // Updated in place on purpose: replacing the topology would redraw the
+        // map and discard whatever the user is already typing in another block.
+        const element = this.topology().elements.find((candidate) => candidate.id === block.id);
+        if (element) {
+          element.traversalSeconds = block.traversalSeconds;
+        }
+        this.showSuccess(`${block.id} traversal time saved: ${block.traversalSeconds}s.`);
       },
       error: (error: unknown) => {
-        this.savingBlockId.set(null);
         this.showError(error);
+        this.redrawMap();
       },
     });
   }
 
-  private applyBlocks(blocks: BlockResponse[]): void {
-    this.blocks.set(blocks);
-    this.blockDrafts.set(
-      Object.fromEntries(blocks.map((block) => [block.id, String(block.traversalSeconds ?? 20)])),
-    );
+  // Restores the last saved values after a rejected edit.
+  private redrawMap(): void {
+    this.topology.update((topology) => ({ ...topology }));
   }
 
   private clearNotice(): void {
