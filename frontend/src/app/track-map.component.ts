@@ -431,6 +431,21 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       arrowLengthOf(edge),
       sharesSpanWithReverse(edge) ? arrowLengthOf(edge) : 0,
     );
+    // Keep the full track beneath the selected line while its colour advances.
+    svg.append('g')
+      .attr('class', 'connection-base')
+      .selectAll('line')
+      .data(this.topology.connections.filter((edge) =>
+        points[edge.fromElementId] && points[edge.toElementId] && isSelectedEdge(edge)))
+      .join('line')
+      .attr('x1', (edge) => lineOf(edge).x1)
+      .attr('y1', (edge) => lineOf(edge).y1)
+      .attr('x2', (edge) => lineOf(edge).x2)
+      .attr('y2', (edge) => lineOf(edge).y2)
+      .attr('stroke', '#b0aea5')
+      .attr('stroke-width', 2.5)
+      .attr('stroke-linecap', 'round')
+      .attr('marker-end', (edge) => isBlockType(targetTypeOf(edge)) ? null : 'url(#arrow)');
     svg.append('g')
       .attr('class', 'connections')
       .selectAll('line')
