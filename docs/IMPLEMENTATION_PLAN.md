@@ -40,9 +40,9 @@ Last updated: 2026-10-02
 | Docker delivery | Complete | `docker compose up --build` from an empty volume |
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
-Last verified result of the full backend suite: `232 passed`, with one
+Last verified result of the full backend suite: `250 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`189 passed`.
+`200 passed`.
 
 ## How to Verify
 
@@ -80,6 +80,7 @@ index, not a second copy.
 | Intervals are `[start, end)`; touching intervals do not conflict | `DOMAIN_RULES.md` section 6 |
 | A zero-duration service strictly inside another service of the same vehicle is rejected | `DOMAIN_RULES.md` section 6 |
 | Platform timings belong to the service and are keyed by path index | `DOMAIN_RULES.md` section 4 |
+| Block changes are saved as a batch after a backend preview of the services they leave stale; each is checked as a single update against the others' saved snapshots | `DOMAIN_RULES.md` rule 4.2, `API_CONTRACT.md`, README trade-off 2 |
 | Saved services keep a timeline snapshot; block changes do not recalculate them. Editing compares the full snapshot with current block times, previews conflicts, and retains a warning beside Save; rejected updates preserve the original snapshot | `DOMAIN_RULES.md` rules 4.1 and 4.2, `PERSISTENCE_DESIGN.md`, `service-timing.ts`, `schedule-editor.component.spec.ts` |
 | Interlocking exclusivity is mandatory and rejected on write (409) | `DOMAIN_RULES.md` section 8, README trade-off 1 |
 | Block occupancy and battery conflicts are rejected on create and update (409); only conflicts the write adds, so schedules saved earlier stay editable; a service that ends in the yard may run low on the way there, but no vehicle may enter a block with less than one battery unit; deletion is not checked. Changed on 2026-10-02 at the user's request from report-only | `DOMAIN_RULES.md` sections 7 and 8.1, README trade-off 1 |
@@ -162,6 +163,23 @@ index, not a second copy.
   after a block change, the link opened the service in edit mode with the
   existing warning, and the list emptied when the block was set back. Backend
   tests were not rerun because no backend file changed.
+
+### Block Change Preview (2026-10-03, after submission)
+
+- `POST /blocks/preview` reports the services a set of block times would leave
+  stale and whether updating each one alone would be rejected; `PUT /blocks`
+  saves several block times in one transaction. The checks create and update
+  run are now one domain function, `validate_service_write`, shared with the
+  preview. The Block Configuration page holds edits until Save, shows the
+  preview, and replaces the frontend stale list of the previous checkpoint.
+- Decision: a stale service is checked against the saved snapshots of the
+  others, not their recalculations, because that is what a single update is
+  validated against. Recorded in `DOMAIN_RULES.md` rule 4.2.
+- Backend `250 passed`; frontend `200 passed`; production stack rebuilt.
+  Browser: a staged block time marked a service as rejected with the
+  interlocking reason, Discard restored the map and the list, Save stored the
+  value and enabled the editor links; clean console. Not checked: 390 px width,
+  leaving the page with unsaved changes (they are dropped without a prompt).
 
 ## Known Limitations
 

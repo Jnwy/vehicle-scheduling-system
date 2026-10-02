@@ -325,6 +325,13 @@ all non-null custom values, including zero. The API requires a non-negative
 integer and rejects null, empty strings, and omitted values; users cannot clear
 the configuration. This default is not a value supplied by the assignment.
 
+A saved service is stale when recalculating it with the current block times,
+keeping its start time, path, and platform dwell durations, gives a different
+timeline. A block change can be previewed before it is saved: each service it
+would leave stale is validated as an update of that service alone, against the
+saved snapshots of all other services. The preview does not change any
+snapshot, and the rules that reject a write are the same ones it applies.
+
 ---
 
 # 5. Resource Occupancy

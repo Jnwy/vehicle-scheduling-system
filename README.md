@@ -58,7 +58,7 @@ the test tools is described under [Testing](#testing).
 | Schedule Editor page | Done | `/editor` |
 | Schedule Viewer page | Done | `/schedule`, read-only |
 | Block Configuration page | Done | `/blocks` |
-| Backend unit tests | Done | 232 tests |
+| Backend unit tests | Done | 250 tests |
 | Bonus 1 — Conflict detection | Done | Block occupancy, low battery, insufficient charge; previewed in the editor and rejected on write |
 | Bonus 2 — Interactive track map | Done | d3 map, click-to-build paths, playback with battery and conflicts |
 | Bonus 3 — Auto-generate schedule | Not implemented | |
@@ -71,8 +71,9 @@ The three pages:
 - **Schedule Viewer**: a time axis per vehicle, services grouped by vehicle
   and ordered by time, and playback on the map with vehicle position, battery
   level, and active conflicts.
-- **Block Configuration**: each block's traversal time is edited in place on
-  the map. Services saved with earlier block times are listed below it.
+- **Block Configuration**: block traversal times are edited on the map and
+  saved together. Before saving, the page lists the saved services the new
+  times would leave stale and which of them could not simply be updated.
 
 ---
 
@@ -121,6 +122,8 @@ Request, response, and error details are in
 | `DELETE /services/{id}` | Delete, unless the vehicle's remaining services would be disconnected |
 | `GET /vehicles`, `GET /topology` | Seeded reference data |
 | `GET /blocks`, `PUT /blocks/{id}` | Read and set block traversal time |
+| `PUT /blocks` | Set several block traversal times, all or none |
+| `POST /blocks/preview` | Saves nothing: the services a set of block times would leave stale, and whether each could be updated |
 | `GET /schedule-analysis` | Bonus report: block occupancy and battery conflicts, and the playback data |
 
 Errors:
@@ -206,20 +209,24 @@ saved timeline interval with the current configuration, including yard-only
 paths and blocks after the last platform. It previews the new times and keeps
 a warning beside Save. Conflicts disable Save; the backend also revalidates
 every update and preserves the original service on rejection. The Schedule
-Viewer does not mark stale services; the Block Configuration page lists them
-with a link that opens each one in the editor, so the user updates them one by
-one. Updating one service can move it into the next service of the same
-vehicle, so the list changes as services are fixed.
+Viewer does not mark stale services. The Block Configuration page holds block
+edits until Save and asks the backend which saved services they would leave
+stale. Each stale service is checked as if it alone were updated with the new
+times while the others keep their snapshots, which is what the user's next
+update does; one that would be rejected is marked with the reason. After
+saving, each service links to the editor, so the user updates them one by one.
+Updating one service can move it into the next, so the list changes as services
+are fixed, and a service marked as rejected needs a new time or path.
 
 **Alternative.** Recalculating every affected service inside the block update
 was rejected as unnecessary transaction complexity for this assignment. If
 block changes had to be retroactive, I would add versioned configuration or an
 explicit replanning step.
 
-The next step would be to save block changes as one batch and have the backend
-report, before saving, which services would go stale and which of them would
-conflict once recalculated. Today each block is saved as it is edited, and the
-list names the stale services but leaves the conflict check to the editor.
+Checking every stale service against the others as they would be after their
+own update, instead of against their saved snapshots, would describe the final
+schedule. I chose the saved snapshots because that is the state each single
+update is validated against.
 
 ### 3. A path starts and ends at a platform or yard
 
@@ -331,15 +338,14 @@ Frontend:
 dc run --rm --no-deps frontend npm test
 ```
 
-Last verified: backend **232 passed** (2026-10-02), frontend **189 passed**
-(2026-10-03).
+Last verified on 2026-10-03: backend **250 passed**, frontend **200 passed**.
 
 | Suite | Covers |
 | --- | --- |
-| Domain (the other seven files in `backend/tests`) | Path rules, timeline calculation, interval overlap, vehicle overlap and continuity, interlocking, update and delete validation, block occupancy and battery analysis and their write validation. No database needed |
+| Domain (the other eight files in `backend/tests`) | Path rules, timeline calculation, interval overlap, vehicle overlap and continuity, interlocking, update and delete validation, block occupancy and battery analysis and their write validation, the block change preview. No database needed |
 | Persistence (`test_persistence`) | Migrations, idempotent seed, block configuration, repository CRUD, rollback |
 | API (`test_api`) | Status codes and error bodies, rollback of rejected writes, concurrent conflicting writes |
-| Frontend (Vitest) | Pure functions: platform time derivation, stale snapshot detection, path building, the editor previews, vehicle availability, playback position and battery, viewer grouping |
+| Frontend (Vitest) | Pure functions: platform time derivation, stale snapshot detection, path building, the editor previews, vehicle availability, playback position and battery, viewer grouping, unsaved block changes |
 
 API tests commit real transactions and clear services, so they require a
 database whose name ends in `_test`. The editor has component logic tests for

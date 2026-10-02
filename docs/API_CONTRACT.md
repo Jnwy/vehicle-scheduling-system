@@ -17,6 +17,8 @@ endpoints through its `/api/` prefix.
 | GET /topology | 200 | Fixed elements and directed connections, in natural ID order |
 | GET /blocks | 200 | Block traversal configuration, in natural ID order (`B2` before `B10`) |
 | PUT /blocks/{id} | 200 | Replace traversal configuration |
+| PUT /blocks | 200 | Replace the traversal configuration of several blocks, all or none |
+| POST /blocks/preview | 200 | Report the services a set of block times would leave stale; saves nothing |
 | GET /schedule-analysis | 200 | Bonus report: per-vehicle playback segments with battery, and detected conflicts |
 
 Vehicles, topology elements, and blocks are returned in natural ID order;
@@ -79,6 +81,24 @@ JSON integers from 0 through 2147483647 (PostgreSQL INTEGER range); booleans,
 floating point values, strings (including empty strings), null, omitted values,
 negative values, and overflow are rejected with 422.
 Existing service snapshots remain stable after configuration writes.
+
+PUT /blocks accepts `{"changes":[{"id":"B1","traversalSeconds":25}]}` and
+returns the updated block objects in request order. Values follow the same
+rules as the single-block PUT. A block listed twice or a missing `changes`
+field is rejected with 422. An ID that is not a block is rejected with 404 and
+no block is changed.
+
+POST /blocks/preview accepts the same body and writes nothing. It applies the
+given times on top of the saved configuration and returns
+`{"services":[...]}`: every saved service whose snapshot would differ from a
+recalculation, ordered by start time. Each entry has `id`, `vehicleId`,
+`startTime`, `path`, and `conflict`. A recalculation keeps the service's start
+time, path, and platform dwell durations. `conflict` is null when updating that
+service alone would be accepted, and otherwise `{"code","message"}` of the
+error the update would return. Every service is checked against the saved
+snapshots of the others, not against their recalculations. An empty `changes`
+list reports the services that are stale under the saved configuration. The
+preview takes no lock, so it describes the schedule at the time it was read.
 
 ## Schedule Analysis
 
