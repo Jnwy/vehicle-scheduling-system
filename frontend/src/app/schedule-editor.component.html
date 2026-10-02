@@ -7,8 +7,9 @@
   <p class="empty muted" role="status">Loading data...</p>
 }
 @if (notice()) {
-  <section class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
-    {{ notice() }}
+  <section class="notice toast" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
+    <span>{{ notice() }}</span>
+    <button type="button" class="notice-close" aria-label="Dismiss message" (click)="notice.set('')">&times;</button>
   </section>
 }
 

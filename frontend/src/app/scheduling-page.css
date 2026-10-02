@@ -286,6 +286,50 @@ small {
   color: #1d5f36;
 }
 
+/* Page-level feedback floats over the page so it is visible wherever the
+   user has scrolled; inline notices inside a form stay in the flow. */
+.notice.toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  margin: 0;
+  transform: translateX(-50%);
+  box-shadow: 0 8px 24px rgba(23, 32, 42, 0.18);
+  animation: notice-in 180ms ease-out;
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice.toast {
+    animation: none;
+  }
+}
+
+.notice .notice-close {
+  flex: none;
+  min-height: 0;
+  margin: -2px -4px 0 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
 .notice.error {
   border-color: #efc3c0;
   background: #fff1f0;

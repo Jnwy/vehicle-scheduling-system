@@ -392,9 +392,18 @@ export class ScheduleEditorComponent implements OnInit {
     this.notice.set('');
   }
 
+  private successTimer?: ReturnType<typeof setTimeout>;
+
+  // Success messages dismiss themselves; errors and warnings stay until closed.
   private showSuccess(message: string): void {
     this.noticeKind.set('success');
     this.notice.set(message);
+    clearTimeout(this.successTimer);
+    this.successTimer = setTimeout(() => {
+      if (this.noticeKind() === 'success') {
+        this.notice.set('');
+      }
+    }, 4000);
   }
 
   private showWarning(message: string): void {
