@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { Component, DestroyRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -13,8 +13,7 @@ import { TrackMapComponent } from './track-map.component';
 
 @Component({
   selector: 'app-schedule-viewer',
-  standalone: true,
-  imports: [CommonModule, FormsModule, TrackMapComponent],
+  imports: [DecimalPipe, FormsModule, TrackMapComponent],
   templateUrl: './schedule-viewer.component.html',
   styleUrl: './scheduling-page.css',
 })

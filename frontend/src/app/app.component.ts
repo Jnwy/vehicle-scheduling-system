@@ -3,7 +3,6 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   imports: [RouterLink, RouterLinkActive, RouterOutlet],
   template: `
     <main>

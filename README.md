@@ -139,7 +139,7 @@ dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:ve
 API tests commit transactions and clear services in the designated test
 database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
-Last verified result: **191 passed**.
+Last verified result: **196 passed**.
 
 Run the frontend unit tests in the frontend container:
 

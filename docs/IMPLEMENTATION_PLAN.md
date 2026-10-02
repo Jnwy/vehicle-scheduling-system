@@ -39,7 +39,7 @@ Last updated: 2026-10-02
 | Docker delivery | Complete | `docker compose up --build` from an empty volume |
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
-Last verified result of the full backend suite: `191 passed`, with one
+Last verified result of the full backend suite: `196 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
 `66 passed`.
 
@@ -96,6 +96,7 @@ index, not a second copy.
 | 2026-10-01 | Bonus 1 and Bonus 2 with review hardening | `144 passed`; desktop and 390 px browser checks |
 | 2026-10-02 | Mandatory interlocking exclusivity; three routed pages | `178 passed`; startup from a new volume |
 | 2026-10-02 | Review follow-ups F1-F7 | `191 passed`; production and development stacks checked in a headless browser, including the default ports from an empty volume |
+| 2026-10-02 | Polish: natural ID order and response schemas for `/vehicles`, `/topology`, `/blocks`; Angular built-in control flow; block input labels | Backend `196 passed`; frontend `66 passed`; production build without warnings; three-page headless browser regression with a clean console |
 | 2026-10-02 | Frontend unit tests added | `66 passed` through the development override; three seeded logic mutations were each caught; production image builds without test files |
 
 ## Known Limitations

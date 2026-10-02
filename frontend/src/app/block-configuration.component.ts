@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -10,8 +10,7 @@ import { errorMessage } from './page-helpers';
 
 @Component({
   selector: 'app-block-configuration',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './block-configuration.component.html',
   styleUrl: './scheduling-page.css',
 })

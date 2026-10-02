@@ -3,10 +3,14 @@
     {{ loadingInitial() ? 'Loading' : 'Refresh' }}
   </button>
 </div>
-<p *ngIf="loadingInitial()" class="empty muted" role="status">Loading data...</p>
-<section *ngIf="notice()" class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
-  {{ notice() }}
-</section>
+@if (loadingInitial()) {
+  <p class="empty muted" role="status">Loading data...</p>
+}
+@if (notice()) {
+  <section class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
+    {{ notice() }}
+  </section>
+}
 
 <section class="layout viewer-layout">
   <div class="left-column">
@@ -45,26 +49,38 @@
         [vehicles]="currentVehicleStates()"
         [conflictElementIds]="activeConflictElementIds()"
         mapPurpose="viewer"
-      />
+        />
 
       <div class="vehicle-status-grid">
-        <article *ngFor="let vehicle of currentVehicleStates()" class="vehicle-status">
-          <strong>{{ vehicle.vehicleId }}</strong>
-          <span>{{ vehicle.serviceId === null ? 'Idle' : 'Service #' + vehicle.serviceId }}</span>
-          <span>Track element {{ vehicle.elementId }}</span>
-          <span [class.battery-low]="vehicle.battery < 30">{{ vehicle.battery | number:'1.0-1' }}%</span>
-        </article>
-        <p *ngIf="analysis().startTime && currentVehicleStates().length === 0" class="muted">No vehicle is active at this time.</p>
+        @for (vehicle of currentVehicleStates(); track vehicle.vehicleId) {
+          <article class="vehicle-status">
+            <strong>{{ vehicle.vehicleId }}</strong>
+            <span>{{ vehicle.serviceId === null ? 'Idle' : 'Service #' + vehicle.serviceId }}</span>
+            <span>Track element {{ vehicle.elementId }}</span>
+            <span [class.battery-low]="vehicle.battery < 30">{{ vehicle.battery | number:'1.0-1' }}%</span>
+          </article>
+        }
+        @if (analysis().startTime && currentVehicleStates().length === 0) {
+          <p class="muted">No vehicle is active at this time.</p>
+        }
       </div>
 
-      <div *ngIf="activeConflicts().length > 0" class="conflict-list" role="alert">
-        <strong>Active conflicts</strong>
-        <span *ngFor="let conflict of activeConflicts()">{{ conflictLabel(conflict) }}</span>
-      </div>
-      <div *ngIf="analysis().conflicts.length > 0 && activeConflicts().length === 0" class="conflict-summary">
-        {{ analysis().conflicts.length }} conflict{{ analysis().conflicts.length === 1 ? '' : 's' }} detected in this schedule.
-      </div>
-      <div *ngIf="!analysis().startTime" class="empty">No scheduled timeline to play.</div>
+      @if (activeConflicts().length > 0) {
+        <div class="conflict-list" role="alert">
+          <strong>Active conflicts</strong>
+          @for (conflict of activeConflicts(); track $index) {
+            <span>{{ conflictLabel(conflict) }}</span>
+          }
+        </div>
+      }
+      @if (analysis().conflicts.length > 0 && activeConflicts().length === 0) {
+        <div class="conflict-summary">
+          {{ analysis().conflicts.length }} conflict{{ analysis().conflicts.length === 1 ? '' : 's' }} detected in this schedule.
+        </div>
+      }
+      @if (!analysis().startTime) {
+        <div class="empty">No scheduled timeline to play.</div>
+      }
     </section>
   </div>
 
@@ -80,51 +96,65 @@
         </button>
       </div>
 
-      <div *ngIf="services().length === 0 && !loadingInitial()" class="empty">
-        No services have been scheduled yet.
-      </div>
-
-      <section *ngFor="let vehicle of services().length > 0 ? vehicleOverviews() : []" class="vehicle-group" [attr.aria-label]="'Schedule for ' + vehicle.vehicleId">
-        <div class="vehicle-group-header">
-          <h3>{{ vehicle.vehicleId }}</h3>
-          <p>{{ vehicle.services.length }} service{{ vehicle.services.length === 1 ? '' : 's' }}</p>
+      @if (services().length === 0 && !loadingInitial()) {
+        <div class="empty">
+          No services have been scheduled yet.
         </div>
+      }
 
-        <div *ngIf="vehicle.serviceBars.length > 0" class="time-axis" role="img" [attr.aria-label]="'Time axis for ' + vehicle.vehicleId">
-          <span *ngFor="let bar of vehicle.serviceBars" class="axis-service" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title">{{ bar.label }}</span>
-          <span *ngFor="let bar of vehicle.conflictBars" class="axis-conflict" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
-          <span class="axis-cursor" [style.left.%]="playbackPosition() / 10"></span>
-        </div>
-
-        <p *ngIf="vehicle.services.length === 0" class="muted vehicle-empty">No services assigned.</p>
-
-        <article *ngFor="let service of vehicle.services" class="service-item">
-          <div class="service-summary">
-            <div>
-              <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
-              <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }} | {{ service.path.join(' -> ') }}</p>
-            </div>
-            <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
-              {{ expandedServiceIds().has(service.id) ? 'Hide timeline' : 'Timeline' }}
-            </button>
+      @for (vehicle of services().length > 0 ? vehicleOverviews() : []; track vehicle.vehicleId) {
+        <section class="vehicle-group" [attr.aria-label]="'Schedule for ' + vehicle.vehicleId">
+          <div class="vehicle-group-header">
+            <h3>{{ vehicle.vehicleId }}</h3>
+            <p>{{ vehicle.services.length }} service{{ vehicle.services.length === 1 ? '' : 's' }}</p>
           </div>
-
-          <div *ngIf="expandedServiceIds().has(service.id)" class="timeline">
-            <div class="table-row table-head">
-              <span>Index</span>
-              <span>Element</span>
-              <span>Start</span>
-              <span>End</span>
+          @if (vehicle.serviceBars.length > 0) {
+            <div class="time-axis" role="img" [attr.aria-label]="'Time axis for ' + vehicle.vehicleId">
+              @for (bar of vehicle.serviceBars; track $index) {
+                <span class="axis-service" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title">{{ bar.label }}</span>
+              }
+              @for (bar of vehicle.conflictBars; track $index) {
+                <span class="axis-conflict" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
+              }
+              <span class="axis-cursor" [style.left.%]="playbackPosition() / 10"></span>
             </div>
-            <div *ngFor="let interval of service.timeline" class="table-row">
-              <span>{{ interval.pathIndex }}</span>
-              <strong>{{ interval.elementId }}</strong>
-              <span>{{ formatForDisplay(interval.startTime) }}</span>
-              <span>{{ formatForDisplay(interval.endTime) }}</span>
-            </div>
-          </div>
-        </article>
-      </section>
+          }
+          @if (vehicle.services.length === 0) {
+            <p class="muted vehicle-empty">No services assigned.</p>
+          }
+          @for (service of vehicle.services; track service.id) {
+            <article class="service-item">
+              <div class="service-summary">
+                <div>
+                  <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
+                  <p>{{ formatForDisplay(service.startTime) }} to {{ formatForDisplay(serviceEndTime(service)) }} | {{ service.path.join(' -> ') }}</p>
+                </div>
+                <button type="button" class="secondary small" (click)="toggleTimeline(service.id)">
+                  {{ expandedServiceIds().has(service.id) ? 'Hide timeline' : 'Timeline' }}
+                </button>
+              </div>
+              @if (expandedServiceIds().has(service.id)) {
+                <div class="timeline">
+                  <div class="table-row table-head">
+                    <span>Index</span>
+                    <span>Element</span>
+                    <span>Start</span>
+                    <span>End</span>
+                  </div>
+                  @for (interval of service.timeline; track interval.pathIndex) {
+                    <div class="table-row">
+                      <span>{{ interval.pathIndex }}</span>
+                      <strong>{{ interval.elementId }}</strong>
+                      <span>{{ formatForDisplay(interval.startTime) }}</span>
+                      <span>{{ formatForDisplay(interval.endTime) }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            </article>
+          }
+        </section>
+      }
     </section>
   </div>
 </section>

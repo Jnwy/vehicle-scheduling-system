@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
 import * as d3 from 'd3';
 
@@ -43,12 +43,12 @@ const POINTS: Record<string, Point> = {
 
 @Component({
   selector: 'app-track-map',
-  standalone: true,
-  imports: [CommonModule],
   template: `
-    <p *ngIf="topologyMissing" class="map-empty" role="status">
-      Track topology is not available, so the map cannot be drawn. Check that the backend is running, then reload the page.
-    </p>
+    @if (topologyMissing) {
+      <p class="map-empty" role="status">
+        Track topology is not available, so the map cannot be drawn. Check that the backend is running, then reload the page.
+      </p>
+    }
     <div class="map-frame" [hidden]="topologyMissing">
       <svg #svg role="img" [attr.aria-label]="interactive ? 'Service path editing map' : 'Vehicle schedule playback map'"></svg>
     </div>
@@ -56,12 +56,18 @@ const POINTS: Record<string, Point> = {
       <span><i class="yard"></i>Yard</span>
       <span><i class="platform"></i>Platform</span>
       <span><i class="block"></i>Block</span>
-      <span *ngIf="mapPurpose === 'editor'"><i class="candidate"></i>Available next</span>
-      <span *ngIf="mapPurpose === 'editor'"><i class="path-end"></i>Editing path endpoint</span>
-      <span *ngIf="mapPurpose === 'viewer'"><i class="vehicle"></i>Playback vehicle position</span>
+      @if (mapPurpose === 'editor') {
+        <span><i class="candidate"></i>Available next</span>
+      }
+      @if (mapPurpose === 'editor') {
+        <span><i class="path-end"></i>Editing path endpoint</span>
+      }
+      @if (mapPurpose === 'viewer') {
+        <span><i class="vehicle"></i>Playback vehicle position</span>
+      }
       <span><i class="conflict"></i>Conflict</span>
     </div>
-  `,
+    `,
   styles: [`
     :host { display: block; min-width: 0; }
     .map-frame { width: 100%; overflow: hidden; border: 1px solid #d5dee7; border-radius: 8px; background: #f8fafc; }

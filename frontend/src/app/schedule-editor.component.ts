@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -28,8 +28,7 @@ interface ServiceForm {
 
 @Component({
   selector: 'app-schedule-editor',
-  standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, TrackMapComponent],
+  imports: [FormsModule, RouterLink, TrackMapComponent],
   templateUrl: './schedule-editor.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -270,10 +269,6 @@ export class ScheduleEditorComponent implements OnInit {
       }
       return next;
     });
-  }
-
-  trackTimingRow(index: number): number {
-    return index;
   }
 
   private createEmptyForm(vehicleId = ''): ServiceForm {

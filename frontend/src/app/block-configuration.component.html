@@ -3,10 +3,14 @@
     {{ loadingInitial() ? 'Loading' : 'Refresh' }}
   </button>
 </div>
-<p *ngIf="loadingInitial()" class="empty muted" role="status">Loading data...</p>
-<section *ngIf="notice()" class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
-  {{ notice() }}
-</section>
+@if (loadingInitial()) {
+  <p class="empty muted" role="status">Loading data...</p>
+}
+@if (notice()) {
+  <section class="notice" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
+    {{ notice() }}
+  </section>
+}
 
 <section class="layout">
   <div class="left-column">
@@ -19,23 +23,31 @@
       </div>
 
       <div class="element-groups">
-        <div *ngFor="let group of topologyGroups()" class="element-group">
-          <h3>{{ group.label }}</h3>
-          <div class="chips">
-            <span *ngFor="let element of group.elements" class="chip" [class.block]="element.elementType === 'BLOCK'">
-              {{ element.id }}
-              <small *ngIf="element.elementType === 'BLOCK'">
-                {{ element.traversalSeconds === null ? 'unset' : element.traversalSeconds + 's' }}
-              </small>
-            </span>
+        @for (group of topologyGroups(); track group.label) {
+          <div class="element-group">
+            <h3>{{ group.label }}</h3>
+            <div class="chips">
+              @for (element of group.elements; track element.id) {
+                <span class="chip" [class.block]="element.elementType === 'BLOCK'">
+                  {{ element.id }}
+                  @if (element.elementType === 'BLOCK') {
+                    <small>
+                      {{ element.traversalSeconds === null ? 'unset' : element.traversalSeconds + 's' }}
+                    </small>
+                  }
+                </span>
+              }
+            </div>
           </div>
-        </div>
+        }
       </div>
 
       <div class="connection-list">
-        <span *ngFor="let edge of topology().connections" class="connection">
-          {{ edge.fromElementId }} -> {{ edge.toElementId }}
-        </span>
+        @for (edge of topology().connections; track $index) {
+          <span class="connection">
+            {{ edge.fromElementId }} -> {{ edge.toElementId }}
+          </span>
+        }
       </div>
     </section>
   </div>
@@ -56,32 +68,35 @@
           <span role="columnheader">Group</span>
           <span role="columnheader"></span>
         </div>
-        <div *ngFor="let block of blocks()" class="table-row" role="row">
-          <strong role="cell">{{ block.id }}</strong>
-          <label role="cell" class="inline-input">
-            <input
-              type="number"
+        @for (block of blocks(); track block.id) {
+          <div class="table-row" role="row">
+            <strong role="cell">{{ block.id }}</strong>
+            <label role="cell" class="inline-input">
+              <input
+                type="number"
+                [disabled]="isBusy()"
+                min="0"
+                step="1"
+                required
+                [name]="'block-' + block.id"
+                [attr.aria-label]="'Traversal seconds for ' + block.id"
+                [ngModel]="blockDrafts()[block.id] ?? '20'"
+                (ngModelChange)="setBlockDraft(block.id, $event)"
+                (blur)="restoreEmptyBlockDraft(block)"
+                />
+            </label>
+            <span role="cell">{{ block.interlockingGroup ?? '-' }}</span>
+            <button
+              role="cell"
+              type="button"
+              class="small"
               [disabled]="isBusy()"
-              min="0"
-              step="1"
-              required
-              [name]="'block-' + block.id"
-              [ngModel]="blockDrafts()[block.id] ?? '20'"
-              (ngModelChange)="setBlockDraft(block.id, $event)"
-              (blur)="restoreEmptyBlockDraft(block)"
-            />
-          </label>
-          <span role="cell">{{ block.interlockingGroup ?? '-' }}</span>
-          <button
-            role="cell"
-            type="button"
-            class="small"
-            [disabled]="isBusy()"
-            (click)="saveBlock(block)"
-          >
-            {{ savingBlockId() === block.id ? 'Saving' : 'Save' }}
-          </button>
-        </div>
+              (click)="saveBlock(block)"
+              >
+              {{ savingBlockId() === block.id ? 'Saving' : 'Save' }}
+            </button>
+          </div>
+        }
       </div>
     </section>
   </div>
