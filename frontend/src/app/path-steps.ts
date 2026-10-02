@@ -70,3 +70,21 @@ export function withoutLastStep(path: string[], topology: TopologyResponse): str
   }
   return remaining;
 }
+
+// The backend's limit (DOMAIN_RULES 3.10). A path may revisit elements, so
+// without one it could grow without end.
+export const MAX_PATH_ELEMENTS = 200;
+
+export function pathLengthProblems(path: string[]): string[] {
+  return path.length > MAX_PATH_ELEMENTS
+    ? [`The path has ${path.length} elements; a service path can have at most ${MAX_PATH_ELEMENTS}.`]
+    : [];
+}
+
+// The step numbers shown above a map element. A path that loops visits the
+// same element many times, and the full list would run into its neighbours.
+export function visitLabel(steps: number[], shown = 3): string {
+  return steps.length <= shown
+    ? steps.join(',')
+    : `${steps.slice(0, shown).join(',')} +${steps.length - shown}`;
+}

@@ -3,7 +3,7 @@ import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, Input
 import * as d3 from 'd3';
 
 import { PlaybackVehicleState, TopologyResponse, TrackElementResponse } from './models';
-import { nextPathSteps } from './path-steps';
+import { nextPathSteps, visitLabel } from './path-steps';
 
 interface Point {
   x: number;
@@ -498,7 +498,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('fill', '#075f46')
       .attr('font-size', 11)
       .attr('font-weight', 800)
-      .text((element) => visits.get(element.id)?.map((item) => item.index).join(',') ?? '');
+      .text((element) => visitLabel(visits.get(element.id)?.map((item) => item.index) ?? []));
 
     // Blocked candidates are unclickable like any other unreachable element.
     // They are greyed by colour rather than opacity, because nothing is

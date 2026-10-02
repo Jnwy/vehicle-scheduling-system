@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TopologyResponse, TrackElementResponse } from './models';
-import { nextPathSteps, withoutLastStep } from './path-steps';
+import { MAX_PATH_ELEMENTS, nextPathSteps, pathLengthProblems, visitLabel, withoutLastStep } from './path-steps';
 
 const element = (id: string): TrackElementResponse => ({
   id,
@@ -75,5 +75,33 @@ describe('withoutLastStep', () => {
     expect(withoutLastStep(['B6', 'B7', 'P3A'], topology)).toEqual(['B6']);
     expect(withoutLastStep(['B6'], topology)).toEqual([]);
     expect(withoutLastStep([], topology)).toEqual([]);
+  });
+});
+
+describe('pathLengthProblems', () => {
+  it('accepts a path at the limit', () => {
+    expect(pathLengthProblems(Array.from({ length: MAX_PATH_ELEMENTS }, () => 'Y'))).toEqual([]);
+  });
+
+  it('reports a path over the limit with both numbers', () => {
+    expect(pathLengthProblems(Array.from({ length: MAX_PATH_ELEMENTS + 1 }, () => 'Y'))).toEqual([
+      'The path has 201 elements; a service path can have at most 200.',
+    ]);
+  });
+});
+
+describe('visitLabel', () => {
+  it('lists every step of an element visited a few times', () => {
+    expect(visitLabel([4])).toBe('4');
+    expect(visitLabel([1, 13, 25])).toBe('1,13,25');
+  });
+
+  it('shortens the list for an element visited many times', () => {
+    expect(visitLabel([1, 13, 25, 37])).toBe('1,13,25 +1');
+    expect(visitLabel([1, 13, 25, 37, 49, 61, 73])).toBe('1,13,25 +4');
+  });
+
+  it('is empty for an element that is not on the path', () => {
+    expect(visitLabel([])).toBe('');
   });
 });

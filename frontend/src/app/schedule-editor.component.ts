@@ -8,7 +8,7 @@ import { forkJoin } from 'rxjs';
 import { SchedulingApi } from './scheduling-api.service';
 import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
 import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
-import { nextPathSteps, withoutLastStep } from './path-steps';
+import { nextPathSteps, pathLengthProblems, withoutLastStep } from './path-steps';
 import { TrackMapComponent } from './track-map.component';
 import {
   ScheduleWindow, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, earliestOpenStart,
@@ -622,7 +622,7 @@ export class ScheduleEditorComponent implements OnInit {
       elements,
       new Map(this.serviceForm.platformTimings.map((row) => [row.pathIndex, row.dwellSeconds])),
     );
-    const blockers: string[] = pathEndpointProblems(path, elements);
+    const blockers: string[] = [...pathLengthProblems(path), ...pathEndpointProblems(path, elements)];
     const conflictIds = new Set<string>();
     const blocked: Record<string, string> = {};
     if (timeline !== null && vehicleId) {
