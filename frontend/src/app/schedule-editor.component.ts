@@ -17,7 +17,7 @@ import {
 } from './service-conflicts';
 import {
   BusyTimeOptions, StartTimeParts, VehicleBusyWindow, VehicleSlot, busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextStartTime,
-  savedTimingsAreStale, splitStartTime, taipeiLocal, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
+  savedTimingsAreStale, splitStartTime, taipeiLocal, nextFreeInstant, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
   vehicleSlots,
 } from './service-timing';
 
@@ -270,6 +270,15 @@ export class ScheduleEditorComponent implements OnInit {
       this.startParts.day = Math.min(day, daysInMonth(year, month));
     }
     this.serviceForm.startTime = composeStartTime(this.startParts);
+    // A combination that lands inside one of the vehicle's services moves on to when it is free again.
+    const chosen = Date.parse(`${this.serviceForm.startTime}+08:00`);
+    if (Number.isFinite(chosen)) {
+      const free = nextFreeInstant(this.busyWindows, chosen);
+      if (free !== chosen) {
+        this.setStartTime(taipeiLocal(free));
+        this.showWarning(`${this.serviceForm.vehicleId} is busy at ${this.slotTime(chosen)}, so the start time moved to ${this.slotTime(free)}, when it is free again.`);
+      }
+    }
     // Follow the vehicle only while no path has been built, so typing a time never discards one.
     if (this.editingServiceId() === null && this.pathSelection().length <= 1) {
       const instant = Date.parse(`${this.serviceForm.startTime}+08:00`);

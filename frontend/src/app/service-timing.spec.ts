@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ServiceResponse, TrackElementResponse } from './models';
 import {
-  busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextStartTime, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
+  busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextFreeInstant, nextStartTime, savedTimingsAreStale, splitStartTime, vehicleBusyWindows,
   vehicleContinuation, vehiclePositionAt, vehicleSlots,
 } from './service-timing';
 
@@ -152,6 +152,17 @@ describe('vehicle availability', () => {
     expect([...otherDay.hour, ...otherDay.minute, ...otherDay.second]).not.toContain(true);
     const noDate = busyTimeOptions(windows, '', null, null);
     expect([...noDate.hour, ...noDate.minute, ...noDate.second]).not.toContain(true);
+  });
+
+  it('moves a busy start time to the first free second, across back-to-back services', () => {
+    const windows = vehicleBusyWindows([
+      service(5, 'V1', '08:00:30', '08:10:40', ['Y', 'B1']),
+      service(6, 'V1', '08:10:40', '08:12:00.500', ['B1', 'B3']),
+    ], 'V1');
+    expect(nextFreeInstant(windows, at('08:10:10'))).toBe(at('08:12:01'));
+    expect(nextFreeInstant(windows, at('08:00:29'))).toBe(at('08:00:29'));
+    expect(nextFreeInstant(windows, at('08:12:01'))).toBe(at('08:12:01'));
+    expect(nextFreeInstant([], at('08:10:10'))).toBe(at('08:10:10'));
   });
 
   it('reports the vehicle position using [start, end) windows', () => {

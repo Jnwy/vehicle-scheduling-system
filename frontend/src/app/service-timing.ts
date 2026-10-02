@@ -174,6 +174,17 @@ export function vehiclePositionAt(
   return { busy: null, elementId: latest?.endElementId ?? null };
 }
 
+// The first whole second at or after the instant when the vehicle is free.
+// Disabling options cannot stop every busy combination: a second that is free
+// in one minute may be busy in the minute chosen next.
+export function nextFreeInstant(windows: VehicleBusyWindow[], instant: number): number {
+  let free = instant;
+  for (let busy = vehiclePositionAt(windows, free).busy; busy !== null; busy = vehiclePositionAt(windows, free).busy) {
+    free = Math.ceil(busy.end / 1000) * 1000;
+  }
+  return free;
+}
+
 export interface BusyTimeOptions {
   hour: boolean[];
   minute: boolean[];
