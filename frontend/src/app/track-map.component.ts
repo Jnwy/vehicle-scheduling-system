@@ -21,7 +21,11 @@ const VIEWBOX_TOP_MARGIN = 40;
 
 // Candidates use blue so they stay distinct from the green selected path.
 const CANDIDATE_STROKE = '#2563eb';
-const CANDIDATE_HALO = '#93c5fd';
+
+const ARROW_LENGTH = 12;
+const SELECTED_ARROW_LENGTH = 14;
+// Clearance between a node's outline and a line end or arrow tip.
+const NODE_GAP = 4;
 
 const ARROW_GROW_MS = 350;
 const RING_TRACE_MS = 450;
@@ -54,6 +58,49 @@ const POINTS: Record<string, Point> = {
   B13: { x: 666, y: 122 },
   B14: { x: 620, y: 255 },
 };
+
+type Connection = TopologyResponse['connections'][number];
+
+// Distance from a node's centre to its rounded-rectangle outline along the
+// unit direction (ux, uy). Sizes match the node shapes drawn in render().
+function outlineDistance(elementType: string | undefined, ux: number, uy: number): number {
+  const [halfWidth, halfHeight, radius] = elementType === 'BLOCK'
+    ? [22, 16, 16]
+    : [31, 21, elementType === 'YARD' ? 4 : 7];
+  const ax = Math.abs(ux);
+  const ay = Math.abs(uy);
+  const distance = Math.min(ax > 0 ? halfWidth / ax : Infinity, ay > 0 ? halfHeight / ay : Infinity);
+  const cornerX = halfWidth - radius;
+  const cornerY = halfHeight - radius;
+  if (ax * distance <= cornerX || ay * distance <= cornerY) {
+    return distance;
+  }
+  // The straight-edge hit lies in a rounded corner: intersect its circle instead.
+  const along = ax * cornerX + ay * cornerY;
+  return along + Math.sqrt(along * along - (cornerX * cornerX + cornerY * cornerY - radius * radius));
+}
+
+// A connection line from the source outline to just short of the target
+// outline, leaving room for the arrowhead whose tip then meets the target.
+function connectionLine(
+  from: Point,
+  to: Point,
+  fromType: string | undefined,
+  toType: string | undefined,
+  arrowLength: number,
+): { x1: number; y1: number; x2: number; y2: number } {
+  const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+  const ux = (to.x - from.x) / length;
+  const uy = (to.y - from.y) / length;
+  const startOffset = outlineDistance(fromType, ux, uy) + NODE_GAP;
+  const endOffset = outlineDistance(toType, ux, uy) + NODE_GAP + arrowLength;
+  return {
+    x1: from.x + ux * startOffset,
+    y1: from.y + uy * startOffset,
+    x2: to.x - ux * endOffset,
+    y2: to.y - uy * endOffset,
+  };
+}
 
 @Component({
   selector: 'app-track-map',
@@ -95,10 +142,10 @@ const POINTS: Record<string, Point> = {
     .legend .platform { background: #e6edf5; }
     .legend .block { border-radius: 50%; background: #f0f4e9; }
     .legend .selected { border-color: #13795b; background: #ccebdd; }
-    .legend .candidate { border-color: #2563eb; box-shadow: 0 0 0 3px #93c5fd; animation: candidate-breathe 1.8s ease-in-out infinite; }
+    .legend .candidate { border-color: #2563eb; animation: candidate-breathe 1.8s ease-in-out infinite; }
     @keyframes candidate-breathe {
-      0%, 100% { box-shadow: 0 0 0 3px #93c5fd; }
-      50% { box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.15); }
+      0%, 100% { border-color: #2563eb; }
+      50% { border-color: rgba(37, 99, 235, 0.3); }
     }
     @media (prefers-reduced-motion: reduce) {
       .legend .candidate { animation: none; }
@@ -191,16 +238,27 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     const playbackIds = new Set(this.vehicles.map((vehicle) => vehicle.elementId));
 
     this.drawStationBands(svg, compact);
+    // Lines run between node outlines rather than node centres, so nothing
+    // shows through a dimmed, translucent node.
+    const elementTypes = new Map(elements.map((element) => [element.id, element.elementType]));
+    const isSelectedEdge = (edge: Connection) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`);
+    const lineOf = (edge: Connection) => connectionLine(
+      points[edge.fromElementId],
+      points[edge.toElementId],
+      elementTypes.get(edge.fromElementId),
+      elementTypes.get(edge.toElementId),
+      isSelectedEdge(edge) ? SELECTED_ARROW_LENGTH : ARROW_LENGTH,
+    );
     svg.append('g')
       .attr('class', 'connections')
       .selectAll('line')
       .data(this.topology.connections.filter((edge) => points[edge.fromElementId] && points[edge.toElementId]))
       .join('line')
-      .attr('x1', (edge) => points[edge.fromElementId].x)
-      .attr('y1', (edge) => points[edge.fromElementId].y)
-      .attr('x2', (edge) => points[edge.toElementId].x)
-      .attr('y2', (edge) => points[edge.toElementId].y)
-      .attr('stroke', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? '#13795b' : '#9aabba')
+      .attr('x1', (edge) => lineOf(edge).x1)
+      .attr('y1', (edge) => lineOf(edge).y1)
+      .attr('x2', (edge) => lineOf(edge).x2)
+      .attr('y2', (edge) => lineOf(edge).y2)
+      .attr('stroke', (edge) => isSelectedEdge(edge) ? '#13795b' : '#9aabba')
       .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 4 : 2.5)
       .attr('stroke-linecap', 'round')
       .attr('marker-end', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 'url(#arrow-selected)' : 'url(#arrow)')
@@ -213,22 +271,20 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     this.growingEdge = null;
     if (growingEdge && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       svg.select('.connections')
-        .selectAll<SVGLineElement, TopologyResponse['connections'][number]>('line')
+        .selectAll<SVGLineElement, Connection>('line')
         .filter((edge) => `${edge.fromElementId}->${edge.toElementId}` === growingEdge)
-        // The arrowhead trails the line end by 48 units, so starting any
-        // shorter would draw it behind the source node.
+        // Starts almost at zero length (a marker needs some length to take
+        // its direction from), with the head just outside the source node.
         .each(function (edge) {
-          const from = points[edge.fromElementId];
-          const to = points[edge.toElementId];
-          const start = Math.min(1, 48 / Math.hypot(to.x - from.x, to.y - from.y));
+          const line = lineOf(edge);
           d3.select(this)
-            .attr('x2', from.x + (to.x - from.x) * start)
-            .attr('y2', from.y + (to.y - from.y) * start);
+            .attr('x2', line.x1 + (line.x2 - line.x1) * 0.02)
+            .attr('y2', line.y1 + (line.y2 - line.y1) * 0.02);
         })
         .transition()
         .duration(ARROW_GROW_MS)
-        .attr('x2', (edge) => points[edge.toElementId].x)
-        .attr('y2', (edge) => points[edge.toElementId].y);
+        .attr('x2', (edge) => lineOf(edge).x2)
+        .attr('y2', (edge) => lineOf(edge).y2);
     }
 
     const animating = growingEdge !== null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -241,8 +297,6 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     const previousSelectedIds = animating ? new Set(this.selectedPath.slice(0, -1)) : selectedIds;
     const dimOpacity = (eligible: Set<string>, selected: Set<string>) => (element: TrackElementResponse) =>
       this.interactive && eligible.size > 0 && !eligible.has(element.id) && !selected.has(element.id) ? 0.38 : 1;
-    const strokeWidth = (eligible: Set<string>, selected: Set<string>) => (element: TrackElementResponse) =>
-      eligible.has(element.id) || selected.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2;
 
     const node = svg.append('g')
       .attr('class', 'nodes')
@@ -263,57 +317,6 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         }
       });
 
-    // Breathing halo behind each candidate signals that it can be clicked.
-    // SMIL is used because Angular's scoped component styles do not reach
-    // elements created by d3.
-    // The previous candidates fade out as soon as the click lands; the new
-    // candidates fade in once the arrow arrives. The fade runs on a wrapper
-    // group because SMIL owns the rect's opacity.
-    const isNewCandidate = (element: TrackElementResponse) => animating && !previousEligibleIds.has(element.id);
-    const changeDelay = (element: TrackElementResponse) => isNewCandidate(element) ? ARROW_GROW_MS : 0;
-    const changeDuration = (element: TrackElementResponse) => isNewCandidate(element) ? CANDIDATE_FADE_IN_MS : CANDIDATE_FADE_OUT_MS;
-    const haloGroup = node.filter((element) => eligibleIds.has(element.id) || previousEligibleIds.has(element.id))
-      .append('g');
-    if (animating) {
-      node.style('opacity', dimOpacity(previousEligibleIds, previousSelectedIds))
-        .transition('dim')
-        .delay(changeDelay)
-        .duration(changeDuration)
-        .style('opacity', dimOpacity(eligibleIds, selectedIds));
-      haloGroup.filter(isNewCandidate)
-        .attr('opacity', 0)
-        .transition()
-        .delay(ARROW_GROW_MS)
-        .duration(CANDIDATE_FADE_IN_MS)
-        .attr('opacity', 1);
-      haloGroup.filter((element) => !eligibleIds.has(element.id))
-        .transition()
-        .duration(CANDIDATE_FADE_OUT_MS)
-        .attr('opacity', 0)
-        .remove();
-    }
-    const halo = haloGroup
-      .append('rect')
-      .attr('x', (element) => element.elementType === 'BLOCK' ? -28 : -37)
-      .attr('y', (element) => element.elementType === 'BLOCK' ? -22 : -27)
-      .attr('width', (element) => element.elementType === 'BLOCK' ? 56 : 74)
-      .attr('height', (element) => element.elementType === 'BLOCK' ? 44 : 54)
-      .attr('rx', (element) => element.elementType === 'YARD' ? 8 : element.elementType === 'PLATFORM' ? 11 : 22)
-      .attr('fill', CANDIDATE_HALO)
-      .attr('opacity', (element) => isNewCandidate(element) ? 0.15 : 0.6);
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      // A new candidate starts breathing from its dim point at arrival, so
-      // the fade-in and the first brightening rise together instead of
-      // flashing.
-      const arrival = this.svgRef.nativeElement.getCurrentTime() + ARROW_GROW_MS / 1000;
-      halo.append('animate')
-        .attr('attributeName', 'opacity')
-        .attr('values', '0.15;0.85;0.15')
-        .attr('dur', '1.8s')
-        .attr('begin', (element) => isNewCandidate(element) ? `${arrival}s` : '0s')
-        .attr('repeatCount', 'indefinite');
-    }
-
     node.append('rect')
       .attr('class', 'node-shape')
       .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
@@ -322,34 +325,64 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
       .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
       .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds))
-      .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
-      .attr('stroke-width', strokeWidth(eligibleIds, selectedIds));
+      .attr('stroke', (element) => this.nodeStroke(element, selectedIds, conflictIds, playbackIds))
+      .attr('stroke-width', (element) => selectedIds.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2);
+
+    // A breathing blue outline on each candidate signals that it can be
+    // clicked. SMIL is used because Angular's scoped component styles do not
+    // reach elements created by d3.
+    // On click the previous candidates fade out while the new ones fade in.
+    // The fade runs on a wrapper group because SMIL owns the rect's opacity.
+    const isNewCandidate = (element: TrackElementResponse) => animating && !previousEligibleIds.has(element.id);
+    const ringGroup = node.filter((element) => eligibleIds.has(element.id) || previousEligibleIds.has(element.id))
+      .append('g');
+    if (animating) {
+      node.style('opacity', dimOpacity(previousEligibleIds, previousSelectedIds))
+        .transition('dim')
+        .duration((element) => isNewCandidate(element) ? CANDIDATE_FADE_IN_MS : CANDIDATE_FADE_OUT_MS)
+        .style('opacity', dimOpacity(eligibleIds, selectedIds));
+      ringGroup.filter(isNewCandidate)
+        .attr('opacity', 0)
+        .transition()
+        .duration(CANDIDATE_FADE_IN_MS)
+        .attr('opacity', 1);
+      ringGroup.filter((element) => !eligibleIds.has(element.id))
+        .transition()
+        .duration(CANDIDATE_FADE_OUT_MS)
+        .attr('opacity', 0)
+        .remove();
+    }
+    const ring = ringGroup
+      .append('rect')
+      .attr('x', (element) => element.elementType === 'BLOCK' ? -22 : -31)
+      .attr('y', (element) => element.elementType === 'BLOCK' ? -16 : -21)
+      .attr('width', (element) => element.elementType === 'BLOCK' ? 44 : 62)
+      .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
+      .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
+      .attr('fill', 'none')
+      .attr('stroke', CANDIDATE_STROKE)
+      .attr('stroke-width', 4)
+      .attr('opacity', (element) => isNewCandidate(element) ? 0.3 : 1);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // A new candidate starts breathing from its dim point, so the fade-in
+      // and the first brightening rise together instead of flashing.
+      const now = this.svgRef.nativeElement.getCurrentTime();
+      ring.append('animate')
+        .attr('attributeName', 'opacity')
+        .attr('values', '0.3;1;0.3')
+        .attr('dur', '1.8s')
+        .attr('begin', (element) => isNewCandidate(element) ? `${now}s` : '0s')
+        .attr('repeatCount', 'indefinite');
+    }
 
     if (animating) {
-      // Candidate outlines change together with their halos.
-      node.filter((element) => previousEligibleIds.has(element.id) !== eligibleIds.has(element.id))
-        .select<SVGRectElement>('.node-shape')
-        .attr('stroke', (element) => this.nodeStroke(element, previousEligibleIds, previousSelectedIds, conflictIds, playbackIds))
-        .attr('stroke-width', strokeWidth(previousEligibleIds, previousSelectedIds))
-        .transition('stroke')
-        .delay(changeDelay)
-        .duration(changeDuration)
-        .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
-        .attr('stroke-width', strokeWidth(eligibleIds, selectedIds));
-
-      // The newly selected node drops its candidate look on click; once the
-      // arrow arrives a green ring is traced around it while the fill fades in.
+      // Once the arrow arrives a green ring is traced around the newly
+      // selected node while its fill fades in.
       const arrivedId = this.selectedPath[this.selectedPath.length - 1];
       const firstVisit = this.selectedPath.indexOf(arrivedId) === this.selectedPath.length - 1;
       const arrived = node.filter((element) => element.id === arrivedId);
       const shape = arrived.select<SVGRectElement>('.node-shape');
-      shape
-        .attr('stroke', CANDIDATE_STROKE)
-        .attr('stroke-width', 4)
-        .transition('stroke')
-        .duration(CANDIDATE_FADE_OUT_MS)
-        .attr('stroke', '#667889')
-        .attr('stroke-width', 2);
+      shape.attr('stroke', '#667889').attr('stroke-width', 2);
       if (firstVisit) {
         shape
           .attr('fill', (element) => this.nodeFill(element, new Set(), conflictIds, playbackIds))
@@ -365,7 +398,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         .attr('height', (element) => element.elementType === 'BLOCK' ? 32 : 42)
         .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
         .attr('fill', 'none')
-        .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
+        .attr('stroke', (element) => this.nodeStroke(element, selectedIds, conflictIds, playbackIds))
         .attr('stroke-width', 4)
         .attr('pathLength', 1)
         .attr('stroke-dasharray', 1)
@@ -456,25 +489,26 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
 
   private addMarkers(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
     const defs = svg.append('defs');
+    // Heads have a fixed size and sit beyond the line end, so the tip meets
+    // the target node's outline instead of hiding under the node.
     defs.append('marker')
       .attr('id', 'arrow')
       .attr('viewBox', '0 -5 10 10')
-      .attr('refX', 19)
-      .attr('markerWidth', 5)
-      .attr('markerHeight', 5)
+      .attr('markerUnits', 'userSpaceOnUse')
+      .attr('refX', 1)
+      .attr('markerWidth', ARROW_LENGTH)
+      .attr('markerHeight', ARROW_LENGTH)
       .attr('orient', 'auto')
       .append('path')
       .attr('d', 'M0,-5L10,0L0,5')
       .attr('fill', '#778999');
-    // Fixed-size head so it does not grow with the thicker selected line;
-    // refX places the tip just outside the widest node (half-width 31).
     defs.append('marker')
       .attr('id', 'arrow-selected')
       .attr('viewBox', '0 -5 10 10')
       .attr('markerUnits', 'userSpaceOnUse')
-      .attr('refX', 34)
-      .attr('markerWidth', 14)
-      .attr('markerHeight', 14)
+      .attr('refX', 1)
+      .attr('markerWidth', SELECTED_ARROW_LENGTH)
+      .attr('markerHeight', SELECTED_ARROW_LENGTH)
       .attr('orient', 'auto')
       .append('path')
       .attr('d', 'M0,-5L10,0L0,5')
@@ -637,7 +671,6 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
 
   private nodeStroke(
     element: TrackElementResponse,
-    eligible: Set<string>,
     selected: Set<string>,
     conflicts: Set<string>,
     playback: Set<string>,
@@ -647,11 +680,6 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     }
     if (playback.has(element.id)) {
       return '#0b6f8f';
-    }
-    // A selected element that can be revisited keeps its selected fill but
-    // takes the candidate stroke, so it still reads as clickable.
-    if (eligible.has(element.id)) {
-      return CANDIDATE_STROKE;
     }
     if (selected.has(element.id)) {
       return '#13795b';
