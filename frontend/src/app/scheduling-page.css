@@ -828,11 +828,6 @@ select:focus {
 .page-nav a:focus-visible {
   outline: 3px solid #d6edf3;
 }
-.page-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
 fieldset {
   border: 0;
   padding: 0;

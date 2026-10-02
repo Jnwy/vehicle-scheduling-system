@@ -1,8 +1,3 @@
-<div class="page-actions">
-  <button type="button" class="secondary" [disabled]="isBusy()" (click)="refreshAll()">
-    {{ loadingInitial() ? 'Loading' : 'Refresh' }}
-  </button>
-</div>
 @if (loadingInitial()) {
   <p class="empty muted" role="status">Loading data...</p>
 }
@@ -92,9 +87,6 @@
           <h2>Read-only schedule</h2>
           <p>{{ services().length }} saved service{{ services().length === 1 ? '' : 's' }}</p>
         </div>
-        <button type="button" class="secondary" [disabled]="loadingInitial()" (click)="loadServices()">
-          {{ loadingInitial() ? 'Refreshing' : 'Refresh list' }}
-        </button>
       </div>
 
       @if (services().length === 0 && !loadingInitial()) {

@@ -32,7 +32,6 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
   readonly playbackTimeMs = signal<number | null>(null);
   readonly playbackSpeed = signal(60);
   readonly isPlaying = signal(false);
-  readonly isBusy = computed(() => this.loadingInitial());
   readonly formatForDisplay = formatForDisplay;
   readonly serviceEndTime = serviceEndTime;
   readonly vehicleOverviews = computed(() => buildVehicleOverviews(this.services(), this.analysis()));
@@ -90,10 +89,6 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
         this.showError(error);
       },
     });
-  }
-
-  loadServices(): void {
-    this.refreshAll();
   }
 
   togglePlayback(): void {

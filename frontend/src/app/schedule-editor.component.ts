@@ -48,23 +48,13 @@ export class ScheduleEditorComponent implements OnInit {
   readonly topology = signal<TopologyResponse>({ elements: [], connections: [] });
   readonly services = signal<ServiceResponse[]>([]);
   readonly expandedServiceIds = signal<Set<number>>(new Set<number>());
-  readonly loadingServices = signal(false);
   readonly savingService = signal(false);
   readonly timingError = signal('');
   readonly missingBlockIds = signal<string[]>([]);
   readonly editingServiceId = signal<number | null>(null);
   readonly pathSelection = signal<string[]>(['Y']);
-  readonly isBusy = computed(() => this.loadingInitial() || this.loadingServices() || this.savingService());
+  readonly isBusy = computed(() => this.loadingInitial() || this.savingService());
   readonly formatForDisplay = formatForDisplay;
-  readonly pathEndpointLabel = computed(() => {
-    const path = this.pathSelection();
-    if (path.length === 0) {
-      return 'Choose a starting track element for the editable service path.';
-    }
-    const start = path[0];
-    const end = path[path.length - 1];
-    return `Editing path endpoints: ${start} -> ${end}`;
-  });
 
   serviceForm: ServiceForm = this.createEmptyForm();
   startParts: StartTimeParts = splitStartTime(this.serviceForm.startTime);
@@ -168,20 +158,6 @@ export class ScheduleEditorComponent implements OnInit {
       },
       error: (error: unknown) => {
         this.loadingInitial.set(false);
-        this.showError(error);
-      },
-    });
-  }
-
-  loadServices(): void {
-    this.loadingServices.set(true);
-    this.api.getServices().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (services) => {
-        this.services.set(services);
-        this.loadingServices.set(false);
-      },
-      error: (error: unknown) => {
-        this.loadingServices.set(false);
         this.showError(error);
       },
     });

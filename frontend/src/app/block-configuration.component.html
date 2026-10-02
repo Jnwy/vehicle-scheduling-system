@@ -1,8 +1,3 @@
-<div class="page-actions">
-  <button type="button" class="secondary" [disabled]="loadingInitial()" (click)="refreshAll()">
-    {{ loadingInitial() ? 'Loading' : 'Refresh' }}
-  </button>
-</div>
 @if (loadingInitial()) {
   <p class="empty muted" role="status">Loading data...</p>
 }
