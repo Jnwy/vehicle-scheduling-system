@@ -96,6 +96,12 @@ Especially avoid adding:
 
 unless explicitly requested.
 
+One exception was explicitly requested and must be kept: the Schedule Editor
+lets the user click the next platform or yard and adds the blocks on the way
+when that route is unique (`frontend/src/app/path-steps.ts`). It is frontend
+only; the API still receives and validates the complete path. Do not extend it
+into backend route finding or shortest-path search.
+
 ---
 
 ### 4. Preserve documented domain decisions
@@ -105,6 +111,8 @@ Important current decisions include:
 - railway topology is a directed graph
 - `YARD`, `PLATFORM`, and `BLOCK` share the `TrackElement` abstraction
 - the user provides the service path
+- a service path starts and ends at a `PLATFORM` or `YARD`; blocks are only
+  passed through
 - connections are directional
 - block-to-block connections are valid
 - scheduling intervals use `[start, end)` semantics

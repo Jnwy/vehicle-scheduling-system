@@ -94,6 +94,12 @@ snake_case attributes such as `path_index`, `element_id`, `service_id`,
 `message` calls "the new service". Request shape
 errors use FastAPI's standard `detail` array with field locations.
 
+Path errors are 422 and are checked in this order: `PathTooShortError`,
+`UnknownTrackElementError` (`element_id`), `MissingTrackConnectionError`
+(`from_element_id`, `to_element_id`), then `PathEndpointOnBlockError`
+(`element_id`, `path_index`) when the first or last path element is a block.
+The first element is reported before the last.
+
 Example:
 
 ```json

@@ -327,9 +327,12 @@ If element types gained significantly different data and behavior, I would keep 
 
 ### Decision
 
-Users provide the complete ordered service path.
+The API receives the complete ordered service path and validates it against
+the topology. The backend never searches for a route.
 
-The application validates that path against the topology.
+In the Schedule Editor the user chooses each stop in order, and the editor
+adds the blocks between two neighbouring stops when that route is unique; see
+the next section.
 
 ### Why
 
@@ -339,7 +342,7 @@ Automatic route finding introduces a separate graph-search problem that is not n
 
 ### Trade-off
 
-The user must provide a valid route rather than selecting only an origin and destination.
+The user must choose every stop along the route rather than selecting only an origin and destination, and an API client must send every block as well.
 
 ### When I Would Change It
 

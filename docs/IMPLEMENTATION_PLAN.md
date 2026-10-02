@@ -39,9 +39,9 @@ Last updated: 2026-10-02
 | Docker delivery | Complete | `docker compose up --build` from an empty volume |
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
-Last verified result of the full backend suite: `196 passed`, with one
+Last verified result of the full backend suite: `202 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`66 passed`.
+`117 passed`.
 
 ## How to Verify
 
@@ -70,7 +70,9 @@ index, not a second copy.
 
 | Decision | Recorded in |
 | --- | --- |
-| Directed topology; the user supplies the complete path; no route finding | `DOMAIN_RULES.md` sections 1-3 |
+| Directed topology; the API receives the complete path; no route finding | `DOMAIN_RULES.md` sections 1-3 |
+| A path starts and ends at a platform or yard; blocks are only passed through (422 `PathEndpointOnBlockError`) | `DOMAIN_RULES.md` rule 3.9, README design decisions |
+| The Schedule Editor offers only the next reachable stops and adds the blocks on the way when that route is unique; otherwise single elements; no reversing in a block back to the same stop. User-approved exception to "no route finding", frontend only | README design decisions, `frontend/src/app/path-steps.ts` |
 | Intervals are `[start, end)`; touching intervals do not conflict | `DOMAIN_RULES.md` section 6 |
 | A zero-duration service strictly inside another service of the same vehicle is rejected | `DOMAIN_RULES.md` section 6 |
 | Platform timings belong to the service and are keyed by path index | `DOMAIN_RULES.md` section 4 |
@@ -98,12 +100,14 @@ index, not a second copy.
 | 2026-10-02 | Review follow-ups F1-F7 | `191 passed`; production and development stacks checked in a headless browser, including the default ports from an empty volume |
 | 2026-10-02 | Frontend unit tests added | `66 passed` through the development override; three seeded logic mutations were each caught; production image builds without test files |
 | 2026-10-02 | Polish: natural ID order and response schemas for `/vehicles`, `/topology`, `/blocks`; Angular built-in control flow; block input labels | Backend `196 passed`; frontend `66 passed`; production build without warnings; three-page headless browser regression with a clean console |
+| 2026-10-02 | Paths must start and end at a platform or yard; editor builds paths by clicking stops | Backend `202 passed`. Frontend `116 passed`, production build, and a browser check of stop clicks, block fill-in, and undo, all before the last change (reversing to the same stop no longer offered); after it only `path-steps.spec.ts` and `service-conflicts.spec.ts` were rerun (`33 passed`), giving 117 by count |
 
 ## Known Limitations
 
 - Bonus 3 (automatic schedule generation) is not implemented.
 - Frontend unit tests cover pure functions only (`service-timing.ts`,
-  `playback.ts`, `schedule-overview.ts`, `page-helpers.ts`). Components,
+  `service-conflicts.ts`, `path-steps.ts`, `playback.ts`,
+  `schedule-overview.ts`, `page-helpers.ts`). Components,
   templates, and the d3 track map are verified only through the browser, and
   the browser checks are not automated in the repository.
 - A vehicle has no position before its first service, because the model has
