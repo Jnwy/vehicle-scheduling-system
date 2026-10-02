@@ -38,6 +38,26 @@
         </label>
       </div>
 
+      @if (analysis().startTime) {
+        <div class="vehicle-axes">
+          @for (vehicle of vehicleOverviews(); track vehicle.vehicleId) {
+            <div class="axis-row">
+              <strong>{{ vehicle.vehicleId }}</strong>
+              <!-- Clicking an axis moves playback there; the slider above does the same from the keyboard. -->
+              <div class="time-axis" role="img" [attr.aria-label]="'Time axis for ' + vehicle.vehicleId" (click)="seekFromAxis($event)">
+                @for (bar of vehicle.serviceBars; track $index) {
+                  <span class="axis-service" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title">{{ bar.label }}</span>
+                }
+                @for (bar of vehicle.conflictBars; track $index) {
+                  <span class="axis-conflict" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
+                }
+                <span class="axis-cursor" [style.left.%]="playbackPosition() / 10"></span>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
       <app-track-map
         [topology]="topology()"
         [selectedPath]="[]"
@@ -74,25 +94,8 @@
           {{ analysis().conflicts.length }} conflict{{ analysis().conflicts.length === 1 ? '' : 's' }} detected in this schedule.
         </div>
       }
-      @if (!analysis().startTime) {
-        <div class="empty">No scheduled timeline to play.</div>
-      }
-    </section>
-  </div>
-
-  <div class="right-column">
-    <section class="panel">
-      <div class="section-header">
-        <div>
-          <h2>Read-only schedule</h2>
-          <p>{{ services().length }} saved service{{ services().length === 1 ? '' : 's' }}</p>
-        </div>
-      </div>
-
-      @if (services().length === 0 && !loadingInitial()) {
-        <div class="empty">
-          No services have been scheduled yet.
-        </div>
+      @if (!analysis().startTime && !loadingInitial()) {
+        <div class="empty">No services have been scheduled yet, so there is nothing to play.</div>
       }
 
       @for (vehicle of services().length > 0 ? vehicleOverviews() : []; track vehicle.vehicleId) {
@@ -101,17 +104,6 @@
             <h3>{{ vehicle.vehicleId }}</h3>
             <p>{{ vehicle.services.length }} service{{ vehicle.services.length === 1 ? '' : 's' }}</p>
           </div>
-          @if (vehicle.serviceBars.length > 0) {
-            <div class="time-axis" role="img" [attr.aria-label]="'Time axis for ' + vehicle.vehicleId">
-              @for (bar of vehicle.serviceBars; track $index) {
-                <span class="axis-service" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title">{{ bar.label }}</span>
-              }
-              @for (bar of vehicle.conflictBars; track $index) {
-                <span class="axis-conflict" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
-              }
-              <span class="axis-cursor" [style.left.%]="playbackPosition() / 10"></span>
-            </div>
-          }
           @if (vehicle.services.length === 0) {
             <p class="muted vehicle-empty">No services assigned.</p>
           }

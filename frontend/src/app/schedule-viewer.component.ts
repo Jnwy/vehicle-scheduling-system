@@ -113,6 +113,11 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
     this.playbackTimeMs.set(scheduleRange(this.analysis())?.start ?? null);
   }
 
+  seekFromAxis(event: MouseEvent): void {
+    const axis = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.seekPlayback(((event.clientX - axis.left) / axis.width) * 1000);
+  }
+
   seekPlayback(value: number | string): void {
     const range = scheduleRange(this.analysis());
     if (range === null) {
