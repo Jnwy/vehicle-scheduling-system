@@ -221,6 +221,7 @@ def test_missing_url_resources(client, method, url, body):
 @pytest.mark.parametrize("change,code", [
     ({"vehicleId": "UNKNOWN"}, "UnknownVehicleError"),
     ({"path": ["Y"]}, "PathTooShortError"),
+    ({"path": ["Y", "B1"] * 100 + ["Y"], "platformTimings": []}, "PathTooLongError"),
     ({"path": ["Y", "UNKNOWN"]}, "UnknownTrackElementError"),
     ({"path": ["Y", "P1A"]}, "MissingTrackConnectionError"),
     ({"path": ["Y", "B1"], "platformTimings": []}, "PathEndpointOnBlockError"),

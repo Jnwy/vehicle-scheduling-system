@@ -139,7 +139,7 @@ dc run --rm --no-deps -e DATABASE_URL=postgresql+psycopg://vehicle_scheduling:ve
 API tests commit transactions and clear services in the designated test
 database. A database name ending in `_test` is required. Do not use an
 application database or run parallel suites against the same test database.
-Last verified result: **202 passed**.
+Last verified result: **206 passed**.
 
 Run the frontend unit tests in the frontend container:
 
@@ -148,7 +148,7 @@ dc run --rm --no-deps frontend npm test
 ```
 
 They cover the frontend's pure functions with Vitest and need no browser or
-backend. Last verified result: **129 passed**.
+backend. Last verified result: **134 passed**.
 
 ---
 
@@ -745,6 +745,9 @@ The complete rules are in [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md).
 - The user supplies the complete path; the system validates it and never
   searches for a route.
 - A path starts and ends at a platform or yard; blocks are only passed through.
+- A path has at most 200 elements. Paths may loop, so without a limit a single
+  service could be long enough to slow every later validation and the
+  schedule analysis.
 - Stations (`S1`-`S3`) are descriptive groupings only. Platforms of the same
   station are not directly connected; moving between them requires a path
   through blocks as defined by the adjacency list.

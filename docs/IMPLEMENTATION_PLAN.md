@@ -39,9 +39,9 @@ Last updated: 2026-10-02
 | Docker delivery | Complete | `docker compose up --build` from an empty volume |
 | Review follow-ups F1-F7 | Complete | See [`REVIEW_FINDINGS.md`](REVIEW_FINDINGS.md) |
 
-Last verified result of the full backend suite: `202 passed`, with one
+Last verified result of the full backend suite: `206 passed`, with one
 upstream Starlette/AnyIO deprecation warning. Frontend unit tests:
-`129 passed`.
+`134 passed`.
 
 ## How to Verify
 
@@ -72,6 +72,7 @@ index, not a second copy.
 | --- | --- |
 | Directed topology; the API receives the complete path; no route finding | `DOMAIN_RULES.md` sections 1-3 |
 | A path starts and ends at a platform or yard; blocks are only passed through (422 `PathEndpointOnBlockError`) | `DOMAIN_RULES.md` rule 3.9, README design decisions |
+| A path has at most 200 elements (422 `PathTooLongError`); the editor previews the same limit | `DOMAIN_RULES.md` rule 3.10 |
 | The Schedule Editor offers only the next reachable stops and adds the blocks on the way when that route is unique; otherwise single elements; no reversing in a block back to the same stop. User-approved exception to "no route finding", frontend only | README design decisions, `frontend/src/app/path-steps.ts` |
 | The Schedule Editor previews write validation in the browser (vehicle overlap, continuity, interlocking, blocked next stops, deletion) and disables the save or delete button while a problem is shown; the backend still validates every write | README "Editor Previews of Write Validation", `frontend/src/app/service-conflicts.ts` |
 | A new service defaults to where and when the vehicle's latest service ended, moved later if every way out is held; busy start times are disabled, and a time picked inside a service moves to the nearest free time | README "Editor Previews of Write Validation", `frontend/src/app/service-timing.ts` |
@@ -106,6 +107,7 @@ index, not a second copy.
 | 2026-10-02 | Full check at `8a4a67e` (service form merged into the editor map panel) against the assignment | Backend `202 passed`; frontend `117 passed`; production build; the running production stack serves the same bundle; browser check of the three pages with a clean console, including a stop click, block fill-in, and undo in the editor. Nothing was saved; startup from an empty volume was not rerun |
 | 2026-10-02 | Review of `feat/map-display-polish` at `ff3f3db`: editor previews, vehicle availability, calendar and time dropdowns, time axes in the playback panel, new colour palette | Backend `202 passed`; frontend `129 passed`; production build without warnings. Headless browser run on a development stack with an empty database: stop clicks, undo, change start, busy options disabled, a busy start moved to a free time, blocked next stops, save and delete disabled with reasons, block edits on the map with invalid values rejected, playback, 390 px width; clean console. Randomized comparison of the editor previews with the API over 700 create, update, and delete requests: no disagreement. Not rerun: the production stack and startup on the default ports |
 | 2026-10-02 | Fix: page message on narrow screens (the close button took the full row) | Measured in a headless browser at 390 px and 1440 px; frontend tests and build were not rerun for this one CSS rule |
+| 2026-10-02 | Path length limit of 200 elements; map visit labels shortened for elements visited more than three times | Found by sending long looping paths to the API: all were accepted, and with a 60,001-element service saved `GET /schedule-analysis` took 51 seconds. After the change: backend `206 passed`; frontend `134 passed`; production build. API returns 422 for 201 elements and accepts 199. Headless browser: labels read `1,13,25 +4` after seven visits; at 205 elements the editor lists the reason and disables saving, and saving is enabled again at 199 |
 
 ## Known Limitations
 
@@ -130,18 +132,17 @@ index, not a second copy.
 
 ## Next Concrete Action
 
-No milestone is in progress. The work since the frontend unit tests milestone
-(the path endpoint rule, stop-based path building, editor previews, vehicle
-availability, start time controls, viewer time axes, and the new palette) is
-on branch `feat/map-display-polish`, which is pushed to the remote and not yet
-merged into `main`. Reviewers read `main`, so merging it is the next step.
+No milestone is in progress. `main` holds all completed work, including the
+branch `feat/map-display-polish` (the path endpoint and length rules,
+stop-based path building, editor previews, vehicle availability, start time
+controls, viewer time axes, and the new palette), which was merged by
+fast-forward.
 
 Open items, all for the user:
 
-1. Merge `feat/map-display-polish` into `main`.
-2. Decide whether to implement Bonus 3 (automatic schedule generation). It is
+1. Decide whether to implement Bonus 3 (automatic schedule generation). It is
    the only assignment item not implemented.
-3. Before submitting: confirm the reviewer can access the repository, and
+2. Before submitting: confirm the reviewer can access the repository, and
    decide whether `AGENTS.md` and `CLAUDE.md` stay in it.
 
 Nothing else is pending. The headless browser scripts used for the checks in

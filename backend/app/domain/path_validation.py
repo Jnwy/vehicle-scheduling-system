@@ -18,6 +18,19 @@ class PathTooShortError(PathValidationError):
         )
 
 
+class PathTooLongError(PathValidationError):
+    # A path may repeat elements, so it has no natural end. Unbounded paths
+    # make every later validation and the schedule analysis slower for all users.
+    maximum_length = 200
+
+    def __init__(self, actual_length: int) -> None:
+        self.actual_length = actual_length
+        super().__init__(
+            "A service path must contain at most "
+            f"{self.maximum_length} track elements; received {actual_length}."
+        )
+
+
 class UnknownTrackElementError(PathValidationError):
     def __init__(self, element_id: str) -> None:
         self.element_id = element_id
@@ -50,6 +63,9 @@ def validate_path(
 ) -> None:
     if len(path) < 2:
         raise PathTooShortError(actual_length=len(path))
+
+    if len(path) > PathTooLongError.maximum_length:
+        raise PathTooLongError(actual_length=len(path))
 
     for element_id in path:
         if not topology.has_element(element_id):

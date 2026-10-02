@@ -221,6 +221,25 @@ of the path is reported before the end.
 
 ---
 
+## Rule 3.10 — Maximum Length
+
+A path may contain at most 200 elements.
+
+Rule 3.8 allows repeated elements, so a path has no natural end: a loop can be
+repeated any number of times. Without a limit, one request can save a service
+of tens of thousands of elements, and every later write validation and the
+schedule analysis then take seconds to minutes for every user. Measured before
+the limit: with one 60,001-element service saved, `GET /schedule-analysis`
+took 51 seconds.
+
+200 elements is about sixteen laps of the loop line, and a vehicle's battery
+reaches zero after ten. This is a project decision made on 2026-10-02, not a
+rule stated by the assignment.
+
+The length is checked before the elements are inspected.
+
+---
+
 # 4. Timeline Rules
 
 A valid path is converted into a time-based timeline.
