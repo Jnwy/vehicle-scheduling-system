@@ -9,6 +9,7 @@ from app.api import router
 from app.application import ResourceNotFoundError, UnknownVehicleError
 from app.domain.interlocking import InterlockingConflictError
 from app.domain.path_validation import PathValidationError
+from app.domain.schedule_conflicts import BatteryConflictError, BlockOccupancyConflictError
 from app.domain.timeline import PlatformTimingError, TimelineConfigurationError
 from app.domain.vehicle_schedule import (
     IncomparableScheduleTimeError, ServiceScheduleError,
@@ -39,6 +40,8 @@ ERROR_STATUS = {
     VehicleOverlapError: 409,
     VehicleLocationContinuityError: 409,
     InterlockingConflictError: 409,
+    BlockOccupancyConflictError: 409,
+    BatteryConflictError: 409,
 }
 
 

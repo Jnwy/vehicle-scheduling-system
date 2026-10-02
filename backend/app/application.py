@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.domain.models import RailwayTopology, TrackElementType
 from app.domain.interlocking import validate_interlocking_schedule
 from app.domain.path_validation import validate_path
+from app.domain.schedule_conflicts import validate_battery, validate_block_occupancy
 from app.domain.timeline import PlatformTiming, calculate_timeline
 from app.domain.vehicle_schedule import (
     ServiceSchedule, ServiceScheduleError, validate_service_deletion, validate_service_update,
@@ -60,10 +61,13 @@ def save_service(
         existing = repository.list()
         if target is None:
             validate_vehicle_schedule(candidate, existing)
-            validate_interlocking_schedule(candidate, existing, topology)
-            return repository.create(candidate), topology
-        validate_service_update(target, candidate, existing)
+        else:
+            validate_service_update(target, candidate, existing)
         validate_interlocking_schedule(candidate, existing, topology)
+        validate_block_occupancy(candidate, existing, topology)
+        validate_battery(candidate, existing, topology, target)
+        if target is None:
+            return repository.create(candidate), topology
         return repository.update(candidate), topology
 
 

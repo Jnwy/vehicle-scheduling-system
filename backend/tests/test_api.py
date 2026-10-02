@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import Barrier, Event
 
 import pytest
@@ -9,6 +9,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import get_session
 from app.application import acquire_write_lock
+from app.domain.timeline import PlatformTiming, calculate_timeline
+from app.domain.vehicle_schedule import ServiceSchedule
 from app.main import app
 from app.persistence.database import SessionFactory, engine
 from app.persistence.models import ServiceRecord, TrackElementRecord
@@ -55,16 +57,33 @@ def create(client, **kwargs):
     return response.json()
 
 
-def create_two_services_sharing_b5(client):
+def store_unvalidated(client, **kwargs):
+    # Saves a service the way one was saved before block occupancy and battery
+    # conflicts rejected writes: straight through the repository.
+    data = payload(**kwargs)
+    with SessionFactory.begin() as session:
+        topology = TopologyRepository(session).get()
+        taipei = timezone(timedelta(hours=8))
+        instant = lambda value: datetime.fromisoformat(value).replace(tzinfo=taipei)
+        timings = [PlatformTiming(item["pathIndex"], instant(item["arrivalTime"]), instant(item["departureTime"]))
+                   for item in data["platformTimings"]]
+        timeline = calculate_timeline(data["path"], instant(data["startTime"]), topology, timings)
+        saved = ServiceRepository(session).create(
+            ServiceSchedule(None, data["vehicleId"], tuple(data["path"]), timeline))
+    return client.get(f"/services/{saved.service_id}").json()
+
+
+def make_b3_and_b4_instant():
     # Every route between two stops reaches ungrouped B5 through B3 or B4,
     # which share an interlocking group. Zero traversal leaves those group
-    # intervals empty, so the two vehicles overlap on B5 alone.
+    # intervals empty, so two vehicles can overlap on B5 alone.
     with SessionFactory.begin() as session:
         for block_id in ("B3", "B4"):
             session.get(TrackElementRecord, block_id).traversal_seconds = 0
-    first = create(client, path=("P1A", "B3", "B5", "P2A"), instant_blocks=("B3", "B4"))
-    second = create(client, path=("P1B", "B4", "B5", "P2A"), vehicle="V2", instant_blocks=("B3", "B4"))
-    return first, second
+
+
+SHARED_B5_FIRST = dict(path=("P1A", "B3", "B5", "P2A"), instant_blocks=("B3", "B4"))
+SHARED_B5_SECOND = dict(path=("P1B", "B4", "B5", "P2A"), vehicle="V2", instant_blocks=("B3", "B4"))
 
 
 @pytest.mark.parametrize("origin", ["http://localhost:4200", "http://127.0.0.1:4200"])
@@ -157,9 +176,11 @@ def test_empty_schedule_analysis_includes_seeded_vehicles(client):
 
 
 def test_schedule_analysis_reports_cross_vehicle_block_conflict(client):
-    # B5 is outside every interlocking group, so the write is accepted and the
-    # Bonus analysis reports the shared block instead.
-    first, second = create_two_services_sharing_b5(client)
+    # Writes reject a shared block, so only a schedule saved before that rule
+    # can still hold one; the analysis reports it.
+    make_b3_and_b4_instant()
+    first = create(client, **SHARED_B5_FIRST)
+    second = store_unvalidated(client, **SHARED_B5_SECOND)
 
     response = client.get("/schedule-analysis")
 
@@ -288,16 +309,18 @@ def test_same_vehicle_overlap_create_rolls_back_nonzero_service(client, start):
 
 
 def test_same_vehicle_overlap_update_rolls_back_and_touching_boundary_succeeds(client):
-    first = create(client, path=("Y", "B1", "Y"))
-    second = create(client, path=("Y", "B1", "Y"), start=30)
+    # A loop that stays out of the yard: touching yard loops leave no time to charge.
+    loop = ("P1A", "B1", "P1A")
+    first = create(client, path=loop)
+    second = create(client, path=loop, start=60)
     before = client.get("/services").json()
 
-    response = client.put(f'/services/{second["id"]}', json=payload(path=("Y", "B1", "Y"), start=5))
+    response = client.put(f'/services/{second["id"]}', json=payload(path=loop, start=5))
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "VehicleOverlapError"
     assert client.get("/services").json() == before
-    response = client.put(f'/services/{second["id"]}', json=payload(path=("Y", "B1", "Y"), start=10))
+    response = client.put(f'/services/{second["id"]}', json=payload(path=loop, start=30))
     assert response.status_code == 200
     assert response.json()["startTime"] == first["timeline"][-1]["endTime"]
 
@@ -351,11 +374,75 @@ def test_interlocking_allows_other_groups_and_ungrouped_blocks(client, path):
     assert create(client, path=path, vehicle="V2")["id"]
 
 
-def test_cross_vehicle_ungrouped_block_occupancy_does_not_reject_write(client):
-    first, second = create_two_services_sharing_b5(client)
-    assert second["timeline"][2] == first["timeline"][2]
-    assert first["timeline"][2]["elementId"] == "B5"
-    assert len(client.get("/services").json()) == 2
+@pytest.mark.parametrize("update", [False, True])
+def test_block_occupancy_rejects_shared_ungrouped_block_and_rolls_back(client, update):
+    make_b3_and_b4_instant()
+    first = create(client, **SHARED_B5_FIRST)
+    second = create(client, **SHARED_B5_SECOND, start=60) if update else None
+    before = client.get("/services").json()
+    data = payload(**SHARED_B5_SECOND, start=5)
+
+    response = (client.put(f'/services/{second["id"]}', json=data) if update
+                else client.post("/services", json=data))
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "BlockOccupancyConflictError"
+    assert detail["block_id"] == "B5"
+    assert detail["conflicting_service_id"] == first["id"]
+    assert client.get("/services").json() == before
+    # [start, end): entering B5 at the instant the first vehicle leaves it is allowed.
+    assert client.post("/services", json=payload(**{**SHARED_B5_SECOND, "vehicle": "V3"}, start=10)).status_code == 201
+
+
+def test_insufficient_charge_rejects_leaving_the_yard_below_80_and_rolls_back(client):
+    first = create(client, path=("Y", "B1", "Y"))
+    before = client.get("/services").json()
+
+    # One block was used and 11 seconds in the yard charge less than one unit.
+    response = client.post("/services", json=payload(path=("Y", "B1", "Y"), start=21))
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "BatteryConflictError"
+    assert detail["conflict_type"] == "INSUFFICIENT_CHARGE"
+    assert detail["vehicle_id"] == "V1"
+    assert client.get("/services").json() == before
+    assert first["timeline"][-1]["endTime"] == "2026-10-01T08:00:10+08:00"
+    # 12 seconds in the yard charge the unit back.
+    assert client.post("/services", json=payload(path=("Y", "B1", "Y"), start=22)).status_code == 201
+
+
+def test_low_battery_rejects_update_and_keeps_original(client):
+    # 50 blocks take the battery from 80 to exactly 30, which is not yet low.
+    loop = ("P1A", "B1") * 50 + ("P1A",)
+    service = create(client, path=loop)
+
+    response = client.put(f'/services/{service["id"]}', json=payload(path=loop + ("B1", "P1A")))
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "BatteryConflictError"
+    assert detail["conflict_type"] == "LOW_BATTERY"
+    assert client.get(f'/services/{service["id"]}').json() == service
+
+
+def test_low_battery_does_not_reject_a_service_that_ends_in_the_yard(client):
+    create(client, path=("P1A", "B1") * 50 + ("P1A",))
+
+    assert client.post("/services", json=payload(path=("P1A", "B1", "P1A"), start=2000)).status_code == 409
+    response = client.post("/services", json=payload(path=("P1A", "B1", "Y"), start=2000))
+    assert response.status_code == 201
+    conflicts = client.get("/schedule-analysis").json()["conflicts"]
+    assert [conflict["conflictType"] for conflict in conflicts] == ["LOW_BATTERY"]
+
+
+def test_saved_battery_conflict_does_not_block_returning_to_the_yard(client):
+    # A vehicle saved low on battery before the rule can still be sent home.
+    loop = ("P1A", "B1") * 51 + ("P1A",)
+    store_unvalidated(client, path=loop)
+
+    assert client.post("/services", json=payload(path=("P1A", "B1", "Y"), start=2000)).status_code == 201
 
 
 def bridge(client):
@@ -392,11 +479,11 @@ def test_continuous_middle_delete_and_other_vehicle_independence(client):
 
 
 def test_repeated_platforms_and_configuration_snapshot(client):
-    data = payload(path=("P1A", "B1", "Y", "B1", "P1A"))
+    data = payload(path=("P1A", "B1", "P1A", "B1", "P1A"))
     response = client.post("/services", json=data)
     assert response.status_code == 201
     original = response.json()
-    assert [item["pathIndex"] for item in original["platformTimings"]] == [0, 4]
+    assert [item["pathIndex"] for item in original["platformTimings"]] == [0, 2, 4]
     client.put("/blocks/B1", json={"traversalSeconds": 20})
     assert client.get(f'/services/{original["id"]}').json() == original
     assert client.put(f'/services/{original["id"]}', json=data).status_code == 422
@@ -440,7 +527,9 @@ def test_half_open_touching_services_and_create_continuity(client):
 
 def test_zero_duration_service_and_update(client):
     client.put("/blocks/B1", json={"traversalSeconds": 0})
-    data = payload(path=("Y", "B1", "Y"), traversal=0)
+    data = payload(path=("P1A", "B1", "P1A"), traversal=0)
+    for timing in data["platformTimings"]:
+        timing["departureTime"] = timing["arrivalTime"] = data["startTime"]
     first = client.post("/services", json=data)
     second = client.post("/services", json=data)
     assert first.status_code == second.status_code == 201
