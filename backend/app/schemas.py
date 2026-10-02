@@ -66,6 +66,30 @@ class BlockInput(BaseModel):
     traversalSeconds: int = Field(strict=True, ge=0, le=2147483647)
 
 
+class VehicleOutput(BaseModel):
+    id: str
+
+
+class BlockOutput(BaseModel):
+    id: str
+    traversalSeconds: int | None
+    interlockingGroup: str | None
+
+
+class TrackElementOutput(BlockOutput):
+    elementType: str
+
+
+class TrackConnectionOutput(BaseModel):
+    fromElementId: str
+    toElementId: str
+
+
+class TopologyOutput(BaseModel):
+    elements: list[TrackElementOutput]
+    connections: list[TrackConnectionOutput]
+
+
 class TimelineOutput(BaseModel):
     pathIndex: int
     elementId: str

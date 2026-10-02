@@ -13,8 +13,8 @@ available at <http://localhost:8000/docs> after Docker startup.
 | PUT /services/{id} | 200 | Full replacement, recalculation, and final-schedule validation |
 | DELETE /services/{id} | 204 | Validate remaining continuity, then delete; empty body |
 | GET /vehicles | 200 | Seeded IDs, ordered by ID |
-| GET /topology | 200 | Fixed elements and directed connections |
-| GET /blocks | 200 | Block traversal configuration, ordered by ID |
+| GET /topology | 200 | Fixed elements and directed connections, in natural ID order |
+| GET /blocks | 200 | Block traversal configuration, in natural ID order (`B2` before `B10`) |
 | PUT /blocks/{id} | 200 | Replace traversal configuration |
 
 IDs are ordered lexicographically for topology/vehicles/blocks and numerically

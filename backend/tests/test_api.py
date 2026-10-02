@@ -87,6 +87,30 @@ def test_unallowed_origin_does_not_receive_cors_allow_origin_header():
     assert "access-control-allow-origin" not in response.headers
 
 
+def test_blocks_and_topology_elements_use_natural_id_order(client):
+    assert [item["id"] for item in client.get("/blocks").json()] == [
+        f"B{number}" for number in range(1, 15)
+    ]
+    assert [item["id"] for item in client.get("/topology").json()["elements"]] == [
+        *(f"B{number}" for number in range(1, 15)),
+        "P1A", "P1B", "P2A", "P2B", "P3A", "P3B", "Y",
+    ]
+
+
+@pytest.mark.parametrize(("method", "path", "schema"), [
+    ("get", "/vehicles", "VehicleOutput"),
+    ("get", "/blocks", "BlockOutput"),
+    ("put", "/blocks/{block_id}", "BlockOutput"),
+    ("get", "/topology", "TopologyOutput"),
+])
+def test_reference_endpoints_document_their_response_schema(client, method, path, schema):
+    openapi = client.get("/openapi.json").json()
+    response = openapi["paths"][path][method]["responses"]["200"]["content"]["application/json"]["schema"]
+
+    assert schema in str(response)
+    assert schema in openapi["components"]["schemas"]
+
+
 def test_complete_crud_and_seed_reads(client):
     assert client.get("/vehicles").json() == [{"id": "V1"}, {"id": "V2"}]
     graph = client.get("/topology").json()

@@ -1,22 +1,34 @@
+import re
 from typing import Annotated, Iterator
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.application import configure_block, delete_service, list_vehicles, save_service
-from app.domain.models import RailwayTopology, TrackElementType
+from app.domain.models import RailwayTopology, TrackElement, TrackElementType
 from app.domain.schedule_analysis import analyze_schedule
 from app.domain.vehicle_schedule import ServiceSchedule
 from app.persistence.database import SessionFactory
 from app.persistence.repositories import ServiceNotFoundError, ServiceRepository, TopologyRepository
 from app.schemas import (
-    BlockInput, PlatformTimingInput, ScheduleAnalysisOutput, ScheduleConflictOutput,
-    ServiceInput, ServiceOutput, SimulationSegmentOutput, TimelineOutput,
-    VehicleSimulationOutput, taipei_time,
+    BlockInput, BlockOutput, PlatformTimingInput, ScheduleAnalysisOutput,
+    ScheduleConflictOutput, ServiceInput, ServiceOutput, SimulationSegmentOutput,
+    TimelineOutput, TopologyOutput, TrackConnectionOutput, TrackElementOutput,
+    VehicleOutput, VehicleSimulationOutput, taipei_time,
 )
 
 
 router = APIRouter()
+
+
+def natural_id_key(element_id: str) -> list[tuple[int, int | str]]:
+    # Orders B2 before B10: digit runs compare as numbers, the rest as text.
+    return [(0, int(part)) if part.isdigit() else (1, part)
+            for part in re.split(r"(\d+)", element_id) if part]
+
+
+def elements_in_display_order(topology: RailwayTopology) -> list[TrackElement]:
+    return sorted(topology.elements.values(), key=lambda item: natural_id_key(item.id))
 
 
 def get_session() -> Iterator[Session]:
@@ -82,7 +94,7 @@ def remove_service(service_id: int, session: DatabaseSession) -> Response:
     return Response(status_code=204)
 
 
-@router.get("/vehicles")
+@router.get("/vehicles", response_model=list[VehicleOutput])
 def vehicles(session: DatabaseSession) -> list[dict[str, str]]:
     return list_vehicles(session)
 
@@ -131,29 +143,31 @@ def schedule_analysis(session: DatabaseSession) -> ScheduleAnalysisOutput:
     )
 
 
-@router.get("/topology")
-def topology(session: DatabaseSession) -> dict[str, list[dict[str, str | int | None]]]:
+@router.get("/topology", response_model=TopologyOutput)
+def topology(session: DatabaseSession) -> TopologyOutput:
     graph = TopologyRepository(session).get()
-    return {
-        "elements": [{"id": item.id, "elementType": item.element_type.value,
-                      "traversalSeconds": item.traversal_seconds,
-                      "interlockingGroup": item.interlocking_group}
-                     for item in graph.elements.values()],
-        "connections": [{"fromElementId": item.from_element_id, "toElementId": item.to_element_id}
-                        for item in sorted(graph.connections,
-                                           key=lambda item: (item.from_element_id, item.to_element_id))],
-    }
+    return TopologyOutput(
+        elements=[TrackElementOutput(id=item.id, elementType=item.element_type.value,
+                                     traversalSeconds=item.traversal_seconds,
+                                     interlockingGroup=item.interlocking_group)
+                  for item in elements_in_display_order(graph)],
+        connections=[TrackConnectionOutput(fromElementId=item.from_element_id,
+                                           toElementId=item.to_element_id)
+                     for item in sorted(graph.connections,
+                                        key=lambda item: (natural_id_key(item.from_element_id),
+                                                          natural_id_key(item.to_element_id)))],
+    )
 
 
-@router.get("/blocks")
-def blocks(session: DatabaseSession) -> list[dict[str, str | int | None]]:
-    return [{"id": item.id, "traversalSeconds": item.traversal_seconds,
-             "interlockingGroup": item.interlocking_group}
-            for item in TopologyRepository(session).get().elements.values()
+@router.get("/blocks", response_model=list[BlockOutput])
+def blocks(session: DatabaseSession) -> list[BlockOutput]:
+    return [BlockOutput(id=item.id, traversalSeconds=item.traversal_seconds,
+                        interlockingGroup=item.interlocking_group)
+            for item in elements_in_display_order(TopologyRepository(session).get())
             if item.element_type is TrackElementType.BLOCK]
 
 
-@router.put("/blocks/{block_id}")
+@router.put("/blocks/{block_id}", response_model=BlockOutput)
 def update_block(
     block_id: str, data: BlockInput, session: DatabaseSession,
 ) -> dict[str, str | int | None]:
