@@ -126,7 +126,7 @@ def test_reference_endpoints_document_their_response_schema(client, method, path
 
 
 def test_complete_crud_and_seed_reads(client):
-    assert client.get("/vehicles").json() == [{"id": "V1"}, {"id": "V2"}]
+    assert client.get("/vehicles").json() == [{"id": f"V{number}"} for number in range(1, 6)]
     graph = client.get("/topology").json()
     assert len(graph["elements"]) == 21
     assert len(graph["connections"]) == 28
@@ -151,10 +151,7 @@ def test_empty_schedule_analysis_includes_seeded_vehicles(client):
     assert response.json() == {
         "startTime": None,
         "endTime": None,
-        "vehicles": [
-            {"vehicleId": "V1", "segments": []},
-            {"vehicleId": "V2", "segments": []},
-        ],
+        "vehicles": [{"vehicleId": f"V{number}", "segments": []} for number in range(1, 6)],
         "conflicts": [],
     }
 
@@ -170,7 +167,7 @@ def test_schedule_analysis_reports_cross_vehicle_block_conflict(client):
     analysis = response.json()
     assert analysis["startTime"] == "2026-10-01T08:00:00+08:00"
     assert analysis["endTime"] == "2026-10-01T08:00:30+08:00"
-    assert [vehicle["vehicleId"] for vehicle in analysis["vehicles"]] == ["V1", "V2"]
+    assert [vehicle["vehicleId"] for vehicle in analysis["vehicles"]] == ["V1", "V2", "V3", "V4", "V5"]
     assert analysis["vehicles"][0]["segments"][2] == {
         "segmentType": "SERVICE",
         "serviceId": first["id"],

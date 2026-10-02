@@ -10,7 +10,7 @@ from app.persistence.models import (
 )
 
 
-SEEDED_VEHICLE_IDS = ("V1", "V2")
+SEEDED_VEHICLE_IDS = ("V1", "V2", "V3", "V4", "V5")
 DEFAULT_BLOCK_TRAVERSAL_SECONDS = 20
 
 

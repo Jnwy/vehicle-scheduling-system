@@ -65,8 +65,8 @@ block supplied outside the seed.
 Vehicle management CRUD is out of scope. Rows are seeded.
 
 The assignment uses `V1` and `V2` as examples but does not provide a complete
-vehicle inventory. The initial seeded inventory is explicitly defined as `V1`
-and `V2` for this implementation.
+vehicle inventory. The seeded inventory is explicitly defined as `V1` to `V5`
+for this implementation, so a schedule can show several vehicles at once.
 
 ### `track_elements`
 
@@ -164,5 +164,5 @@ the HTTP and concurrency contract.
 - Seed operations must be idempotent.
 - Track elements and directed connections come from the assignment topology.
 - Blocks B1-B14 initially use 20 seconds; existing null values are filled with 20.
-- The vehicle seed is `V1`, `V2`.
+- The vehicle seed is `V1` to `V5`.
 - Seed execution must not overwrite user-configured traversal values.

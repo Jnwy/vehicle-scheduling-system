@@ -78,6 +78,9 @@ def test_seed_creates_expected_vehicles_and_topology(session):
     assert session.scalars(select(VehicleRecord.id).order_by(VehicleRecord.id)).all() == [
         "V1",
         "V2",
+        "V3",
+        "V4",
+        "V5",
     ]
     assert session.scalar(select(func.count()).select_from(TrackElementRecord)) == 21
     assert session.scalar(select(func.count()).select_from(TrackConnectionRecord)) == 28
