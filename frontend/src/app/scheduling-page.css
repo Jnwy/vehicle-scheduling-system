@@ -323,6 +323,9 @@ small {
 
 .notice .notice-close {
   flex: none;
+  /* Narrow screens stretch every button to full width; this one must not
+     take the row away from the message. */
+  width: auto;
   min-height: 0;
   margin: -2px -4px 0 0;
   padding: 0 4px;
