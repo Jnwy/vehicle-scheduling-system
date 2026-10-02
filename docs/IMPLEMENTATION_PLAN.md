@@ -101,6 +101,7 @@ index, not a second copy.
 | 2026-10-02 | Frontend unit tests added | `66 passed` through the development override; three seeded logic mutations were each caught; production image builds without test files |
 | 2026-10-02 | Polish: natural ID order and response schemas for `/vehicles`, `/topology`, `/blocks`; Angular built-in control flow; block input labels | Backend `196 passed`; frontend `66 passed`; production build without warnings; three-page headless browser regression with a clean console |
 | 2026-10-02 | Paths must start and end at a platform or yard; editor builds paths by clicking stops | Backend `202 passed`. Frontend `116 passed`, production build, and a browser check of stop clicks, block fill-in, and undo, all before the last change (reversing to the same stop no longer offered); after it only `path-steps.spec.ts` and `service-conflicts.spec.ts` were rerun (`33 passed`), giving 117 by count |
+| 2026-10-02 | Full check at `8a4a67e` (service form merged into the editor map panel) against the assignment | Backend `202 passed`; frontend `117 passed`; production build; the running production stack serves the same bundle; browser check of the three pages with a clean console, including a stop click, block fill-in, and undo in the editor. Nothing was saved; startup from an empty volume was not rerun |
 
 ## Known Limitations
 
@@ -119,8 +120,10 @@ index, not a second copy.
 
 ## Next Concrete Action
 
-No milestone is in progress. `main` is the only branch on the remote and holds
-all completed work; start from `main`.
+No milestone is in progress. `main` is the only branch on the remote. The work
+since the frontend unit tests milestone (editor map polish, the path endpoint
+rule, stop-based path building) is on the local branch
+`feat/map-display-polish`, which has not been pushed or merged.
 
 Open items, all for the user:
 

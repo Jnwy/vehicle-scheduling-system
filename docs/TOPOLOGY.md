@@ -35,17 +35,7 @@ Source: the assignment track map and adjacency list.
 
 ## Track Map
 
-Place the original assignment image at:
-
-```text
-docs/topology.png
-```
-
-Then reference it here:
-
-```md
 ![Track map](./topology.png)
-```
 
 The adjacency list below is the authoritative representation used by the backend.
 
