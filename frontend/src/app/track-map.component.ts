@@ -27,6 +27,10 @@ const SELECTED_ARROW_LENGTH = 14;
 // Clearance between a node's outline and a line end or arrow tip.
 const NODE_GAP = 4;
 
+// Blocks on the configuration map are drawn as input fields.
+const CONFIG_BLOCK_HALF_WIDTH = 31;
+const CONFIG_BLOCK_RADIUS = 6;
+
 const ARROW_GROW_MS = 350;
 const RING_TRACE_MS = 450;
 const CANDIDATE_FADE_OUT_MS = 250;
@@ -64,9 +68,11 @@ type Connection = TopologyResponse['connections'][number];
 // Distance from a node's centre to its rounded-rectangle outline along the
 // unit direction (ux, uy). Sizes match the node shapes drawn in render().
 function outlineDistance(elementType: string | undefined, ux: number, uy: number): number {
-  const [halfWidth, halfHeight, radius] = elementType === 'BLOCK'
+  const [halfWidth, halfHeight, radius] = elementType === 'CONFIG_BLOCK'
+    ? [CONFIG_BLOCK_HALF_WIDTH, 16, CONFIG_BLOCK_RADIUS]
+    : elementType === 'BLOCK'
     ? [22, 16, 16]
-    : [31, 21, elementType === 'YARD' ? 4 : 7];
+    :[31, 21, elementType === 'YARD' ? 4 : 7];
   const ax = Math.abs(ux);
   const ay = Math.abs(uy);
   const distance = Math.min(ax > 0 ? halfWidth / ax : Infinity, ay > 0 ? halfHeight / ay : Infinity);
@@ -117,13 +123,18 @@ function connectionLine(
     <div class="legend" [hidden]="topologyMissing" aria-label="Track map legend">
       <span><i class="yard"></i>Yard</span>
       <span><i class="platform"></i>Platform</span>
-      <span><i class="block"></i>Block</span>
+      @if (mapPurpose !== 'config') {
+        <span><i class="block"></i>Block</span>
+      }
       @if (mapPurpose === 'editor') {
         <span><i class="selected"></i>Selected path</span>
         <span><i class="candidate"></i>Available next</span>
       }
       @if (mapPurpose === 'viewer') {
         <span><i class="vehicle"></i>Playback vehicle position</span>
+      }
+      @if (mapPurpose === 'config') {
+        <span><i class="field"></i>Block: editable traversal time in seconds</span>
       }
       @if (mapPurpose !== 'config') {
         <span><i class="conflict"></i>Conflict</span>
@@ -142,6 +153,7 @@ function connectionLine(
     .legend .yard { background: #d8edf2; }
     .legend .platform { background: #e6edf5; }
     .legend .block { border-radius: 50%; background: #f0f4e9; }
+    .legend .field { width: 20px; border-color: #235f7a; }
     .legend .selected { border-color: #13795b; background: #ccebdd; }
     .legend .candidate { border-color: #2563eb; animation: candidate-breathe 1.8s ease-in-out infinite; }
     @keyframes candidate-breathe {
@@ -241,7 +253,10 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     this.drawStationBands(svg, compact);
     // Lines run between node outlines rather than node centres, so nothing
     // shows through a dimmed, translucent node.
-    const elementTypes = new Map(elements.map((element) => [element.id, element.elementType]));
+    const elementTypes = new Map<string, string>(elements.map((element) => [
+      element.id,
+      this.mapPurpose === 'config' && element.elementType === 'BLOCK' ? 'CONFIG_BLOCK' : element.elementType,
+    ]));
     const isSelectedEdge = (edge: Connection) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`);
     // A two-way connection reads as one line with a head at each end: both
     // directions cover the same span, each stopping short of the other's
@@ -455,37 +470,41 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-weight', 800)
       .text((element) => visits.get(element.id)?.map((item) => item.index).join(',') ?? '');
 
-    node.filter((element) => this.mapPurpose === 'editor' && this.selectedPath.at(-1) === element.id)
-      .append('text')
-      .attr('x', 0)
-      .attr('y', 35)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#0b6f8f')
-      .attr('font-size', 10)
-      .attr('font-weight', 800)
-      .text('edit end');
-
     this.drawVehicles(svg, points, compact);
   }
 
   private drawTraversalInputs(blocks: d3.Selection<SVGGElement, TrackElementResponse, SVGGElement, unknown>): void {
-    blocks.select('.node-shape').attr('fill', '#ffffff').attr('stroke', '#235f7a');
+    // The block is redrawn as a wider, squarer field so it reads as an input.
+    blocks.select('.node-shape')
+      .attr('x', -CONFIG_BLOCK_HALF_WIDTH)
+      .attr('width', CONFIG_BLOCK_HALF_WIDTH * 2)
+      .attr('rx', CONFIG_BLOCK_RADIUS)
+      .attr('fill', '#ffffff')
+      .attr('stroke', '#235f7a');
     const emitter = this.blockTraversalChanged;
-    blocks.append('foreignObject')
-      .attr('x', -20)
+    // Styles are inline or in an SVG-local sheet because Angular's scoped
+    // component styles do not reach elements created by d3.
+    d3.select(this.svgRef!.nativeElement).append('style')
+      // Chrome only shows the stepper on hover unless forced.
+      .text('.traversal-input::-webkit-inner-spin-button{opacity:1}');
+    const field = blocks.append('foreignObject')
+      .attr('x', -CONFIG_BLOCK_HALF_WIDTH + 3)
       .attr('y', -12)
-      .attr('width', 40)
+      .attr('width', CONFIG_BLOCK_HALF_WIDTH * 2 - 6)
       .attr('height', 24)
-      .append('xhtml:input')
-      .attr('type', 'text')
-      .attr('inputmode', 'numeric')
+      .append('xhtml:div')
+      .attr('style', 'display:flex;align-items:center;gap:2px;height:100%;color:#17202a;font:800 13px sans-serif;');
+    field.append('xhtml:input')
+      .attr('class', 'traversal-input')
+      .attr('title', (block) => `${block.id} traversal time in seconds`)
+      .attr('type', 'number')
+      .attr('min', 0)
+      .attr('step', 1)
       .attr('data-block-id', (block) => block.id)
       .attr('aria-label', (block) => `Traversal seconds for ${block.id}`)
       .attr('value', (block) => block.traversalSeconds ?? '')
-      // Inline because Angular's scoped component styles do not reach
-      // elements created by d3.
-      .attr('style', 'width:100%;height:100%;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:10px;'
-        + 'background:transparent;color:#17202a;font:800 13px inherit;text-align:center;')
+      .attr('style', 'flex:1;min-width:0;height:100%;box-sizing:border-box;margin:0;padding:0;border:0;'
+        + 'background:transparent;color:inherit;font:inherit;text-align:center;')
       .on('change', function (_, block) {
         emitter.emit({ blockId: block.id, value: (this as HTMLInputElement).value });
       })
