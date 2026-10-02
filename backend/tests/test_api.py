@@ -368,6 +368,26 @@ def test_interlocking_update_rolls_back_and_touching_boundary_succeeds(client):
     assert response.json()["startTime"] == first["timeline"][-1]["endTime"]
 
 
+@pytest.mark.parametrize("other_start, status", [(15, 409), (20, 200), (30, 200)])
+def test_block_reconfiguration_update_validates_interlocking_and_preserves_snapshot(client, other_start, status):
+    first = create(client, path=("Y", "B1", "Y"))
+    create(client, path=("Y", "B2", "Y"), vehicle="V2", start=other_start)
+    before = client.get("/services").json()
+
+    assert client.put("/blocks/B1", json={"traversalSeconds": 20}).status_code == 200
+    assert client.get("/services").json() == before
+    response = client.put(f'/services/{first["id"]}', json=payload(path=("Y", "B1", "Y")))
+
+    assert response.status_code == status, response.text
+    if status == 409:
+        assert response.json()["detail"]["code"] == "InterlockingConflictError"
+        assert response.json()["detail"]["interlocking_group"] == "IG1"
+        assert client.get("/services").json() == before
+    else:
+        assert response.json()["id"] == first["id"]
+        assert response.json()["timeline"][1]["endTime"] == "2026-10-01T08:00:20+08:00"
+
+
 @pytest.mark.parametrize("path", [("P1A", "B3", "B5", "P2A"), ("P2A", "B6", "B7", "P3A")])
 def test_interlocking_allows_other_groups_and_ungrouped_blocks(client, path):
     create(client, path=("Y", "B1", "Y"))
@@ -435,6 +455,18 @@ def test_low_battery_does_not_reject_a_service_that_ends_in_the_yard(client):
     assert response.status_code == 201
     conflicts = client.get("/schedule-analysis").json()["conflicts"]
     assert [conflict["conflictType"] for conflict in conflicts] == ["LOW_BATTERY"]
+
+
+def test_running_out_of_battery_rejects_even_a_service_that_ends_in_the_yard(client):
+    home_after = lambda blocks: payload(path=("P1A", "B1") * (blocks - 1) + ("P1A", "B1", "Y"))
+
+    response = client.post("/services", json=home_after(81))
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "BatteryConflictError"
+    assert response.json()["detail"]["conflict_type"] == "EMPTY_BATTERY"
+    assert client.get("/services").json() == []
+    assert client.post("/services", json=home_after(80)).status_code == 201
 
 
 def test_saved_battery_conflict_does_not_block_returning_to_the_yard(client):

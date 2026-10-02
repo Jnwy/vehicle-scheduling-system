@@ -152,10 +152,12 @@ After interlocking, create/update rejects two further conflicts with 409:
   `conflicting_service_id`): another vehicle occupies the same block in an
   overlapping `[start, end)` interval. Grouped blocks are reported as
   `InterlockingConflictError` first.
-- `BatteryConflictError` (`conflict_type` `LOW_BATTERY` or
-  `INSUFFICIENT_CHARGE`, `vehicle_id`, `candidate_service_id`): the write would
-  add a battery conflict to a vehicle it touches. A service that ends in the
-  yard is not rejected for running low on the way there. See `DOMAIN_RULES.md`
+- `BatteryConflictError` (`conflict_type` `LOW_BATTERY`,
+  `INSUFFICIENT_CHARGE`, or `EMPTY_BATTERY`, `vehicle_id`,
+  `candidate_service_id`): the write would add a battery conflict to a vehicle
+  it touches. A service that ends in the yard is not rejected for running low
+  on the way there, but any service is rejected with `EMPTY_BATTERY` when the
+  vehicle would enter a block with less than one battery unit. See `DOMAIN_RULES.md`
   section 8.1 for what counts as added.
 
 Deletion is not checked against either.

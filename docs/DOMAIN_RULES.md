@@ -500,6 +500,12 @@ were reported only after saving.
   block takes it below 30. The stretch is still a low-battery conflict in
   schedule analysis, and the editor points it out without blocking the save.
   Leaving the yard below 80 afterwards is still rejected.
+- A vehicle cannot enter a block with less than the one unit the block costs
+  (409 `BatteryConflictError`, `conflict_type` `EMPTY_BATTERY`; decided by the
+  user on 2026-10-02). This closes the exception above: a service may run low
+  on its way to the yard, but it must get there. From 80, that is 80 blocks.
+  Schedule analysis has no such conflict type; it clamps the battery at zero
+  and reports the stretch as low battery.
 - Yard duration is zero, so a path that passes through the yard and continues
   cannot charge there. After any block the battery is below 80, so such a path
   is rejected unless the vehicle was charged above 80 beforehand; returning to

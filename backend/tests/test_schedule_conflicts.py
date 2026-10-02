@@ -116,6 +116,19 @@ def test_low_battery_on_the_way_to_the_yard_is_allowed():
         validate_battery(schedule(("P1A", "B1", "P1A"), start=1000, service_id=None), [at_threshold], TOPOLOGY)
 
 
+def test_running_out_of_battery_before_the_yard_is_rejected():
+    def home_after(blocks):
+        return schedule(("P1A", "B1") * (blocks - 1) + ("P1A", "B1", "Y"), service_id=None)
+
+    # 80 blocks arrive in the yard with exactly nothing left.
+    validate_battery(home_after(80), [], TOPOLOGY)
+    with pytest.raises(BatteryConflictError) as error:
+        validate_battery(home_after(81), [], TOPOLOGY)
+
+    assert error.value.conflict_type == "EMPTY_BATTERY"
+    assert "run out of battery" in str(error.value)
+
+
 def test_ending_in_the_yard_does_not_excuse_leaving_it_uncharged_afterwards():
     later = schedule(("Y", "B1", "P1A"), start=1000)
     home = schedule(("P1A", "B1", "Y"), start=990, service_id=None)

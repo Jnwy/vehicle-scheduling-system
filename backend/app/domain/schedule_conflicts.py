@@ -5,18 +5,30 @@ module rejects a create or update that would introduce one, so the analysis
 only still reports conflicts that were saved before the rule existed.
 """
 
+from datetime import datetime
 from typing import Iterable
 
 from app.domain.models import RailwayTopology, TrackElementType
 from app.domain.schedule_analysis import (
+    BLOCK_BATTERY_COST,
     ConflictType,
+    ScheduleAnalysis,
     ScheduleConflict,
+    SegmentType,
     analyze_schedule,
 )
 from app.domain.vehicle_schedule import ServiceSchedule, service_label
 
 
 BATTERY_CONFLICT_TYPES = (ConflictType.INSUFFICIENT_CHARGE, ConflictType.LOW_BATTERY)
+# Not an analysis conflict type: schedule analysis clamps the battery at zero
+# and reports the stretch as low battery. Only write validation tells it apart.
+EMPTY_BATTERY = "EMPTY_BATTERY"
+BATTERY_REJECTIONS = {
+    ConflictType.INSUFFICIENT_CHARGE.value: "leave the yard below 80 battery units",
+    ConflictType.LOW_BATTERY.value: "be below 30 battery units outside the yard",
+    EMPTY_BATTERY: "run out of battery before it can cross a block",
+}
 
 
 class BlockOccupancyConflictError(ValueError):
@@ -38,20 +50,16 @@ class BlockOccupancyConflictError(ValueError):
 class BatteryConflictError(ValueError):
     def __init__(
         self,
-        conflict_type: ConflictType,
+        conflict_type: str,
         vehicle_id: str,
         candidate_service_id: int | None,
     ) -> None:
-        self.conflict_type = conflict_type.value
+        self.conflict_type = conflict_type
         self.vehicle_id = vehicle_id
         self.candidate_service_id = candidate_service_id
-        reason = (
-            "leave the yard below 80 battery units"
-            if conflict_type is ConflictType.INSUFFICIENT_CHARGE
-            else "be below 30 battery units outside the yard"
-        )
         super().__init__(
-            f"With {service_label(candidate_service_id)}, vehicle {vehicle_id} would {reason}."
+            f"With {service_label(candidate_service_id)}, vehicle {vehicle_id} would "
+            f"{BATTERY_REJECTIONS[conflict_type]}."
         )
 
 
@@ -98,7 +106,9 @@ def validate_battery(
 
     A candidate that ends in the yard is not rejected for a low battery that
     begins before it gets there: the vehicle is on its way to charge. Schedule
-    analysis still reports that stretch.
+    analysis still reports that stretch. It is rejected when the battery would
+    not last: a vehicle cannot enter a block with less than the one unit the
+    block costs, wherever the service ends.
     """
     existing = tuple(existing_services)
     if target is None:
@@ -109,9 +119,15 @@ def validate_battery(
             for service in existing
         )
     affected = {candidate.vehicle_id} | ({target.vehicle_id} if target is not None else set())
-    known = {_conflict_key(conflict) for conflict in _battery_conflicts(existing, affected, topology)}
+    before = _battery_analysis(existing, affected, topology)
+    after = _battery_analysis(final, affected, topology)
+    known_empty = set(_blocks_entered_empty(before, topology))
+    for vehicle_id, start_time in _blocks_entered_empty(after, topology):
+        if (vehicle_id, start_time) not in known_empty:
+            raise BatteryConflictError(EMPTY_BATTERY, vehicle_id, candidate.service_id)
+    known = {_conflict_key(conflict) for conflict in _battery_conflicts(before)}
     ends_in_yard = topology.elements[candidate.end_location].element_type is TrackElementType.YARD
-    for conflict in _battery_conflicts(final, affected, topology):
+    for conflict in _battery_conflicts(after):
         heading_to_charge = (
             ends_in_yard
             and conflict.conflict_type is ConflictType.LOW_BATTERY
@@ -120,21 +136,38 @@ def validate_battery(
         )
         if _conflict_key(conflict) not in known and not heading_to_charge:
             raise BatteryConflictError(
-                conflict.conflict_type, conflict.vehicle_ids[0], candidate.service_id,
+                conflict.conflict_type.value, conflict.vehicle_ids[0], candidate.service_id,
             )
 
 
-def _battery_conflicts(
+def _battery_analysis(
     services: tuple[ServiceSchedule, ...],
     vehicle_ids: set[str],
     topology: RailwayTopology,
-) -> tuple[ScheduleConflict, ...]:
-    analysis = analyze_schedule(
+) -> ScheduleAnalysis:
+    return analyze_schedule(
         (service for service in services if service.vehicle_id in vehicle_ids), topology,
     )
+
+
+def _battery_conflicts(analysis: ScheduleAnalysis) -> tuple[ScheduleConflict, ...]:
     return tuple(
         conflict for conflict in analysis.conflicts
         if conflict.conflict_type in BATTERY_CONFLICT_TYPES
+    )
+
+
+def _blocks_entered_empty(
+    analysis: ScheduleAnalysis, topology: RailwayTopology,
+) -> tuple[tuple[str, datetime], ...]:
+    """Blocks a vehicle would enter without the battery to cross them."""
+    return tuple(
+        (vehicle.vehicle_id, segment.start_time)
+        for vehicle in analysis.vehicles
+        for segment in vehicle.segments
+        if segment.segment_type is SegmentType.SERVICE
+        and topology.elements[segment.element_id].element_type is TrackElementType.BLOCK
+        and segment.battery_start < BLOCK_BATTERY_COST
     )
 
 

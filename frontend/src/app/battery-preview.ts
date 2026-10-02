@@ -24,6 +24,8 @@ export interface TimedService {
 export interface BatterySegment {
   // True while the vehicle waits between services or after its last one.
   idle: boolean;
+  // True while the vehicle crosses a block.
+  block: boolean;
   service: TimedService | null;
   pathIndex: number | null;
   elementId: string;
@@ -73,7 +75,7 @@ export function vehicleBatterySegments(
       ? Math.min(MAX_BATTERY, battery + (end - previous!.end) / 1000 / CHARGE_SECONDS_PER_UNIT)
       : battery;
     segments.push({
-      idle: true, service: null, pathIndex: null, elementId: previous!.elementId,
+      idle: true, block: false, service: null, pathIndex: null, elementId: previous!.elementId,
       start: previous!.end, end, batteryStart: battery, batteryEnd,
     });
     battery = batteryEnd;
@@ -85,7 +87,7 @@ export function vehicleBatterySegments(
     service.timeline.forEach((interval, pathIndex) => {
       const batteryEnd = blockIds.has(interval.elementId) ? Math.max(0, battery - BLOCK_BATTERY_COST) : battery;
       segments.push({
-        idle: false, service, pathIndex, elementId: interval.elementId,
+        idle: false, block: blockIds.has(interval.elementId), service, pathIndex, elementId: interval.elementId,
         start: interval.start, end: interval.end, batteryStart: battery, batteryEnd,
       });
       battery = batteryEnd;
@@ -99,7 +101,8 @@ export function vehicleBatterySegments(
   return segments;
 }
 
-export type BatteryConflictKind = 'INSUFFICIENT_CHARGE' | 'LOW_BATTERY';
+// EMPTY_BATTERY: the vehicle would enter a block without the unit the block costs.
+export type BatteryConflictKind = 'INSUFFICIENT_CHARGE' | 'LOW_BATTERY' | 'EMPTY_BATTERY';
 
 export interface BatteryConflict {
   kind: BatteryConflictKind;
@@ -130,11 +133,13 @@ function lowBatteryStart(segment: BatterySegment): number | null {
   return segment.start;
 }
 
-// Leaving the yard below 80, and every stretch below 30 outside the yard.
+// Leaving the yard below 80, every stretch below 30 outside the yard, and
+// entering a block with too little battery left to cross it.
 // Exactly 30 is not yet low. Consecutive low segments are one conflict.
 export function batteryConflicts(vehicleId: string, segments: BatterySegment[]): BatteryConflict[] {
   const conflicts: BatteryConflict[] = [];
   let lowUntil: number | null = null;
+  let wasEmpty = false;
   segments.forEach((segment, index) => {
     if (
       !segment.idle && segment.elementId !== YARD_ID && index > 0
@@ -144,6 +149,17 @@ export function batteryConflicts(vehicleId: string, segments: BatterySegment[]):
         kind: 'INSUFFICIENT_CHARGE', vehicleId, start: segment.start, service: segment.service,
         pathIndex: segment.pathIndex, elementId: segment.elementId, battery: segment.batteryStart, allowed: false,
       });
+    }
+    // Only the first block of a stretch is reported; the ones after it follow from it.
+    const empty = segment.block && segment.batteryStart < BLOCK_BATTERY_COST;
+    if (empty && !wasEmpty) {
+      conflicts.push({
+        kind: 'EMPTY_BATTERY', vehicleId, start: segment.start, service: segment.service,
+        pathIndex: segment.pathIndex, elementId: segment.elementId, battery: segment.batteryStart, allowed: false,
+      });
+    }
+    if (segment.block) {
+      wasEmpty = empty;
     }
     const lowStart = lowBatteryStart(segment);
     if (lowStart === null) {

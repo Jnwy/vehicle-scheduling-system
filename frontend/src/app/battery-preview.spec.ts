@@ -97,6 +97,20 @@ describe('newBatteryConflicts', () => {
       .toEqual([expect.objectContaining({ kind: 'INSUFFICIENT_CHARGE', allowed: false })]);
   });
 
+  it('rejects running out of battery, even on the way to the yard', () => {
+    const homeAfter = (blocks: number) =>
+      service(null, [...Array.from({ length: blocks - 1 }, () => ['P1A', 'B1']).flat(), 'P1A', 'B1', 'Y']);
+
+    // 80 blocks arrive with nothing left; the low battery on the way is allowed.
+    expect(newBatteryConflicts(homeAfter(80), [], elements).map((conflict) => [conflict.kind, conflict.allowed]))
+      .toEqual([['LOW_BATTERY', true]]);
+    // The 81st block cannot be crossed.
+    expect(newBatteryConflicts(homeAfter(81), [], elements)).toEqual([
+      expect.objectContaining({ kind: 'LOW_BATTERY', allowed: true }),
+      expect.objectContaining({ kind: 'EMPTY_BATTERY', allowed: false, pathIndex: 161, elementId: 'B1', battery: 0 }),
+    ]);
+  });
+
   it('finds a later saved service that the candidate drains', () => {
     const later = service(7, laps(50), 1000);
     const [conflict] = newBatteryConflicts(service(null, ['P1A', 'B1', 'P1A']), [later], elements);
