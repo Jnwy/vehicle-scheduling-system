@@ -73,7 +73,7 @@
             <strong>{{ vehicle.vehicleId }}</strong>
             <span>{{ vehicle.serviceId === null ? 'Idle' : 'Service #' + vehicle.serviceId }}</span>
             <span>Track element {{ vehicle.elementId }}</span>
-            <span [class.battery-low]="vehicle.battery < 30">{{ vehicle.battery | number:'1.0-1' }}%</span>
+            <span [class.battery-low]="vehicle.battery < 30">Battery {{ vehicle.battery | number:'1.0-1' }}%</span>
           </article>
         }
         @if (analysis().startTime && currentVehicleStates().length === 0) {

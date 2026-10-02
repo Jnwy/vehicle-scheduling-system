@@ -1,5 +1,27 @@
 import { HttpErrorResponse } from '@angular/common/http';
 
+import { ConflictType, ScheduleConflict } from './models';
+
+const CONFLICT_KIND: Record<ConflictType, string> = {
+  BLOCK_OCCUPANCY: 'Block occupancy',
+  LOW_BATTERY: 'Battery problem',
+  INSUFFICIENT_CHARGE: 'Battery problem',
+};
+const DESCRIBED_CONFLICTS = 2;
+
+// Says what each conflict is about; a count alone does not tell a battery
+// problem from a shared block. The rest are left to Schedule Viewer.
+export function describeConflicts(conflicts: ScheduleConflict[]): string {
+  const described = conflicts
+    .slice(0, DESCRIBED_CONFLICTS)
+    .map((conflict) => `${CONFLICT_KIND[conflict.conflictType]}: ${conflict.message}`);
+  const remaining = conflicts.length - described.length;
+
+  return remaining > 0
+    ? `${described.join(' ')} ${remaining} more in Schedule Viewer.`
+    : described.join(' ');
+}
+
 export function formatForDisplay(value: string): string {
   return value.replace('T', ' ').replace('+08:00', '');
 }

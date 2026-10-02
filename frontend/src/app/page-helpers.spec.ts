@@ -5,8 +5,9 @@ import '@angular/compiler';
 import { HttpErrorResponse } from '@angular/common/http';
 import { describe, expect, it } from 'vitest';
 
+import { ScheduleConflict } from './models';
 import {
-  errorMessage, formatApiError, formatErrorDetail, formatForDisplay, fromDatetimeLocal, toDatetimeLocal,
+  describeConflicts, errorMessage, formatApiError, formatErrorDetail, formatForDisplay, fromDatetimeLocal, toDatetimeLocal,
 } from './page-helpers';
 
 describe('datetime formatting', () => {
@@ -95,5 +96,41 @@ describe('errorMessage', () => {
 
   it('has a generic message for anything else', () => {
     expect(errorMessage(new Error('boom'))).toBe('Unexpected frontend error.');
+  });
+});
+
+describe('describeConflicts', () => {
+  const conflict = (conflictType: ScheduleConflict['conflictType'], message: string): ScheduleConflict => ({
+    conflictType,
+    resourceId: null,
+    startTime: '2026-10-03T09:00:00+08:00',
+    endTime: '2026-10-03T09:00:20+08:00',
+    vehicleIds: ['V1'],
+    serviceIds: [1],
+    elementIds: [],
+    message,
+  });
+
+  it('names both battery conflict types as a battery problem', () => {
+    expect(describeConflicts([conflict('INSUFFICIENT_CHARGE', 'Vehicle V1 left the yard below 80 battery units.')]))
+      .toBe('Battery problem: Vehicle V1 left the yard below 80 battery units.');
+    expect(describeConflicts([conflict('LOW_BATTERY', 'Vehicle V1 is below 30 battery units outside the yard.')]))
+      .toBe('Battery problem: Vehicle V1 is below 30 battery units outside the yard.');
+  });
+
+  it('names a block occupancy conflict', () => {
+    expect(describeConflicts([conflict('BLOCK_OCCUPANCY', 'B5 is shared.')])).toBe('Block occupancy: B5 is shared.');
+  });
+
+  it('describes the first two conflicts and counts the rest', () => {
+    const conflicts = [
+      conflict('LOW_BATTERY', 'First.'),
+      conflict('BLOCK_OCCUPANCY', 'Second.'),
+      conflict('LOW_BATTERY', 'Third.'),
+      conflict('LOW_BATTERY', 'Fourth.'),
+    ];
+
+    expect(describeConflicts(conflicts))
+      .toBe('Battery problem: First. Block occupancy: Second. 2 more in Schedule Viewer.');
   });
 });

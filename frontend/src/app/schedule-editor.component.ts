@@ -7,7 +7,7 @@ import { forkJoin } from 'rxjs';
 
 import { SchedulingApi } from './scheduling-api.service';
 import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
-import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
+import { describeConflicts, errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
 import { nextPathSteps, pathLengthProblems, withoutLastStep } from './path-steps';
 import { TrackMapComponent } from './track-map.component';
 import {
@@ -556,7 +556,7 @@ export class ScheduleEditorComponent implements OnInit {
         this.editingServiceId.set(null);
         this.resetForm();
         if (analysis.conflicts.length > 0) {
-          this.showWarning(`${successMessage} ${analysis.conflicts.length} bonus conflict${analysis.conflicts.length === 1 ? '' : 's'} detected.`);
+          this.showWarning(`${successMessage} ${describeConflicts(analysis.conflicts)}`);
         } else {
           this.showSuccess(successMessage);
         }
