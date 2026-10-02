@@ -2,7 +2,7 @@
   <p class="empty muted" role="status">Loading data...</p>
 }
 @if (notice()) {
-  <section class="notice toast" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
+  <section class="notice toast" animate.leave="toast-leave" role="status" aria-live="polite" [class.error]="noticeKind() === 'error'" [class.success]="noticeKind() === 'success'" [class.warning]="noticeKind() === 'warning'">
     <span>{{ notice() }}</span>
     <button type="button" class="notice-close" aria-label="Dismiss message" (click)="notice.set('')">&times;</button>
   </section>
@@ -62,7 +62,7 @@
             (click)="toggleCalendar()"
             >{{ startDate || 'pick a date' }}</button>
           @if (calendarOpen) {
-            <div class="calendar" role="dialog" aria-label="Choose the start date">
+            <div class="calendar" animate.enter="surface-enter" animate.leave="surface-leave" role="dialog" aria-label="Choose the start date">
               <div class="calendar-nav">
                 <button type="button" aria-label="Previous year" (click)="shiftCalendar(-12)">«</button>
                 <button type="button" aria-label="Previous month" (click)="shiftCalendar(-1)">‹</button>
@@ -233,7 +233,7 @@
       >{{ statusCollapsed() ? '+' : '–' }}</button>
     </div>
     @if (!statusCollapsed()) {
-      <ul>
+      <ul animate.enter="surface-enter">
         @if (startMovedNote) {
           <li class="note">{{ startMovedNote }}</li>
         }
@@ -257,34 +257,32 @@
         <div class="vehicle-slots">
           <h3>{{ serviceForm.vehicleId }} availability</h3>
           @for (slot of vehicleSlots; track $index) {
-            @if (slot.kind === 'busy') {
-              <div class="slot busy">
-                <span class="slot-tag">BUSY</span>
-                <span>{{ slotTime(slot.start!) }} → {{ axisTime(slot.end!, slot.start!) }}</span>
-                <span>service #{{ slot.serviceId }} · {{ slot.elementId }} -> {{ slot.nextElementId }}</span>
-              </div>
-            } @else {
-              <div class="slot free">
-                <span class="slot-tag">FREE</span>
-                <span>
+              <div class="slot" [class.busy]="slot.kind === 'busy'" [class.free]="slot.kind === 'free'">
+                <span class="slot-tag">{{ slot.kind === 'busy' ? 'BUSY' : 'FREE' }}</span>
+                <div class="slot-period">
                   @if (slot.start === null && slot.end === null) {
-                    any time
-                  } @else if (slot.start === null) {
-                    … → {{ slotTime(slot.end!) }}
-                  } @else if (slot.end === null) {
-                    {{ slotTime(slot.start) }} → …
+                    <span class="slot-anytime">any time</span>
                   } @else {
-                    {{ slotTime(slot.start) }} → {{ axisTime(slot.end, slot.start) }}
+                    <span class="slot-date">{{ slotDate((slot.start ?? slot.end)!) }}</span>
+                    <strong class="slot-clock">{{ slot.start === null ? '…' : slotClock(slot.start) }}</strong>
+                    <span class="slot-arrow">→</span>
+                    <strong class="slot-clock">{{ slot.end === null ? '…' : slotClock(slot.end) }}</strong>
+                    @if (slot.start !== null && slot.end !== null && slotDate(slot.start) !== slotDate(slot.end)) {
+                      <span class="slot-date slot-end-date">{{ slotDate(slot.end) }}</span>
+                    }
                   }
-                </span>
+                </div>
+                @if (slot.kind === 'busy') {
+                <span>service #{{ slot.serviceId }} · {{ slot.elementId }} -> {{ slot.nextElementId }}</span>
+                } @else {
                 <span>
                   starts at <strong>{{ slot.elementId ?? 'Y' }}</strong>@if (slot.nextElementId) {<em> · must end at {{ slot.nextElementId }}</em>}
                 </span>
                 @if (slot.start !== null) {
                   <button type="button" class="secondary small" (click)="useFreeSlot(slot)">Use</button>
                 }
+                }
               </div>
-            }
           }
         </div>
       }
@@ -413,7 +411,7 @@
             <p class="delete-blocker">Cannot delete: {{ reason }}</p>
           }
           @if (expandedServiceIds().has(service.id)) {
-            <div class="timeline">
+            <div class="timeline" animate.enter="surface-enter" animate.leave="surface-leave">
               <div class="table-row table-head">
                 <span>Index</span>
                 <span>Element</span>

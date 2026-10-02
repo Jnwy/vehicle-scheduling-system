@@ -135,12 +135,12 @@ small {
 }
 
 .form-panel {
-  border-top: 4px solid #d97757;
+  border-top: 2px solid #c4795c;
 }
 
 .map-panel {
   margin-bottom: 18px;
-  border-top: 4px solid #d97757;
+  border-top: 2px solid #c4795c;
 }
 
 .map-form {
@@ -196,16 +196,16 @@ small {
   gap: 5px;
   min-height: 30px;
   padding: 3px 8px;
-  border: 1px solid #9ccfbb;
+  border: 1px solid #e3c9bc;
   border-radius: 6px;
-  background: #edf8f3;
-  color: #075f46;
+  background: #f7eee8;
+  color: #704633;
   font-size: 13px;
   font-weight: 800;
 }
 
 .path-steps small {
-  color: #40806b;
+  color: #857064;
 }
 
 .playback-controls {
@@ -218,30 +218,6 @@ small {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-}
-
-.vehicle-status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 0;
-  margin-top: 12px;
-  border-top: 1px solid #e3e0d5;
-}
-
-.vehicle-status {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-  padding: 10px 12px;
-  border-bottom: 1px solid #e3e0d5;
-  font-size: 13px;
-}
-
-.battery-low {
-  color: #b42318;
-  font-weight: 800;
 }
 
 .conflict-list,
@@ -284,10 +260,10 @@ small {
 .notice {
   margin-bottom: 16px;
   padding: 12px 14px;
-  border: 1px solid #b8d8c7;
+  border: 1px solid #dedbd2;
   border-radius: 8px;
-  background: #edf8f1;
-  color: #1d5f36;
+  background: #faf9f5;
+  color: #3d3d3a;
 }
 
 /* Page-level feedback floats over the page so it is visible wherever the
@@ -364,6 +340,7 @@ button {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
 }
 
 button:hover:not(:disabled) {
@@ -524,9 +501,10 @@ select:focus {
 
 .timeline .table-row:not(.table-head) {
   padding: 8px 10px;
-  border: 1px solid #f0eee6;
-  border-radius: 6px;
-  background: #fdfcf8;
+  border: 0;
+  border-bottom: 1px solid #ebe9e0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .timeline .table-row:not(.table-head) span:nth-child(3),
@@ -601,8 +579,9 @@ button.vehicle-option:hover:not(:disabled) {
 }
 
 button.vehicle-option.selected {
-  border-color: #ffb020;
-  box-shadow: 0 0 0 2px rgba(255, 176, 32, 0.35), 0 0 8px rgba(255, 176, 32, 0.7);
+  border-color: #c15f3c;
+  box-shadow: 0 0 0 2px rgb(193 95 60 / 12%);
+  background: #f7eee8;
   color: #141413;
 }
 
@@ -811,13 +790,13 @@ button.vehicle-option.selected {
 
 .slot {
   display: grid;
-  grid-template-columns: 44px minmax(190px, 1fr) minmax(170px, 1.1fr) 64px;
+  grid-template-columns: 44px minmax(260px, 1fr) minmax(170px, 1.1fr) 64px;
   gap: 10px;
   align-items: center;
   min-height: 36px;
   padding: 2px 10px;
   border: 1px solid #e3e0d5;
-  border-left: 3px solid #2e8b62;
+  border-left: 3px solid #c4795c;
   border-radius: 6px;
   background: #faf9f5;
   color: #3d3d3a;
@@ -826,10 +805,44 @@ button.vehicle-option.selected {
 }
 
 .slot-tag {
-  color: #2e8b62;
+  color: #704633;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
+}
+
+.slot-period {
+  display: grid;
+  grid-template-columns: 10ch 8ch 1ch 10ch;
+  gap: 4px 6px;
+  align-items: baseline;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-date {
+  color: #73726c;
+  font-weight: 400;
+}
+
+.slot-clock {
+  color: #3d3d3a;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.slot-arrow {
+  color: #91908a;
+}
+
+.slot-end-date {
+  grid-column: 4;
+  font-size: 11px;
+}
+
+.slot-anytime {
+  grid-column: 1 / -1;
 }
 
 .slot em {
@@ -916,11 +929,13 @@ button.vehicle-option.selected {
   max-height: 40vh;
   padding: 10px 14px;
   overflow-y: auto;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
   box-shadow: 0 8px 24px rgba(20, 20, 19, 0.18);
-  border: 1px solid #cfe5da;
+  border: 1px solid #dedbd2;
   border-radius: 8px;
-  background: #f3faf6;
-  color: #075f46;
+  background: #faf9f5;
+  color: #3d3d3a;
   font-size: 13px;
 }
 
@@ -929,6 +944,10 @@ button.vehicle-option.selected {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.map-status-header strong {
+  min-width: 0;
 }
 
 .map-status.collapsed {
@@ -1294,6 +1313,22 @@ button.vehicle-group-header:hover {
   white-space: nowrap;
 }
 
+/* A thin strip along the bottom of the row while the vehicle charges. */
+.axis-charging {
+  position: absolute;
+  bottom: 0;
+  height: 5px;
+  min-width: 3px;
+  background: #d4a27f;
+}
+
+/* The bolt stands on the strip where charging begins. */
+.axis-charging svg {
+  position: absolute;
+  bottom: 3px;
+  left: 1px;
+}
+
 .axis-conflict {
   top: auto;
   height: 7px;
@@ -1330,17 +1365,7 @@ button.vehicle-group-header:hover {
   .slot,
   .table-row,
   .timeline .table-row,
-  .playback-controls,
-/* A thin strip along the bottom of the row while the vehicle charges. */
-.axis-charging {
-  position: absolute;
-  bottom: 0;
-  height: 5px;
-  min-width: 3px;
-  background: #d4a27f;
-}
-
-  .vehicle-status {
+  .playback-controls {
     grid-template-columns: 1fr;
   }
 
@@ -1413,4 +1438,44 @@ fieldset {
 .start-moved {
   color: #72510d;
   font-weight: 600;
+}
+
+input[type="range"] {
+  accent-color: #c15f3c;
+}
+
+.page-nav a {
+  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+
+.surface-enter {
+  animation: surface-in 160ms ease-out;
+}
+
+.surface-leave {
+  animation: surface-out 120ms ease-in;
+  pointer-events: none;
+}
+
+@keyframes surface-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes surface-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+
+.notice.toast.toast-leave {
+  animation: notice-out 120ms ease-in;
+  pointer-events: none;
+}
+
+@keyframes notice-out {
+  to { opacity: 0; transform: translate(-50%, -4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button, .page-nav a { transition: none; }
+  .surface-enter, .surface-leave, .notice.toast.toast-leave { animation: none; }
 }

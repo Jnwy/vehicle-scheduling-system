@@ -29,8 +29,8 @@ const VIEWBOX_HEIGHT = 360;
 // Headroom above the top row so three stacked vehicle markers are not clipped.
 const VIEWBOX_TOP_MARGIN = 72;
 
-// Candidates use blue so they stay distinct from the green selected path.
-const CANDIDATE_STROKE = '#2563eb';
+// Candidates stay distinct from the terracotta selected path.
+const CANDIDATE_STROKE = '#3f6c91';
 
 const ARROW_LENGTH = 12;
 const SELECTED_ARROW_LENGTH = 14;
@@ -70,10 +70,14 @@ const CAR_STACK_OFFSET = 7;
 
 const VEHICLE_INPUTS = new Set(['vehicles', 'alertVehicleIds', 'batteryAlertVehicleIds', 'focusVehicleId']);
 
+// The charging bolt, also drawn on the schedule viewer's axes.
+const CHARGING_BOLT_FILL = '#c15f3c';
+const CHARGING_BOLT_STROKE = '#faf9f5';
+
 const ALERT_STROKE = '#b42318';
 const ALERT_BLINK_SECONDS = 0.9;
 // The outline and glow around the vehicle being edited.
-const FOCUS_STROKE = '#ffb020';
+const FOCUS_STROKE = '#c15f3c';
 const FOCUS_PULSE_SECONDS = 1.2;
 
 const ARROW_GROW_MS = 350;
@@ -261,22 +265,22 @@ function connectionLine(
     .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: #73726c; font-size: 12px; font-weight: 700; }
     .legend span { display: inline-flex; align-items: center; gap: 5px; }
     .legend i { width: 13px; height: 13px; border: 2px solid #5e5d59; border-radius: 3px; background: #fff; }
-    .legend .yard { background: #e3dacc; }
+    .legend .yard { background: #ebe9e0; }
     .legend .platform { background: #f0eee6; }
     .legend .block { width: 20px; height: 0; border: 0; border-top: 2px solid #73726c; border-radius: 0; background: transparent; }
     .legend .field { width: 20px; border-color: #c15f3c; }
-    .legend .selected { border-color: #13795b; background: #ccebdd; }
-    .legend .candidate { border-color: #2563eb; animation: candidate-breathe 1.8s ease-in-out infinite; }
+    .legend .selected { border-color: #c15f3c; background: #f3e3da; }
+    .legend .candidate { border-color: #3f6c91; animation: candidate-breathe 1.8s ease-in-out infinite; }
     .legend .blocked { border-style: dashed; border-color: #b42318; background: #f0eee6; }
     @keyframes candidate-breathe {
-      0%, 100% { border-color: #2563eb; }
-      50% { border-color: rgba(37, 99, 235, 0.3); }
+      0%, 100% { border-color: #3f6c91; }
+      50% { border-color: rgba(63, 108, 145, 0.7); }
     }
     @media (prefers-reduced-motion: reduce) {
       .legend .candidate { animation: none; }
     }
     .legend .vehicle { border-radius: 50%; background: #4e79a7; }
-    .legend .focus { border-color: #ffb020; box-shadow: 0 0 5px 1px #ffb020; }
+    .legend .focus { border-color: #c15f3c; }
     .legend .conflict { border-color: #b42318; background: #fee4e2; }
     @media (max-width: 680px) {
       svg { aspect-ratio: 520 / 1052; min-height: 0; }
@@ -326,7 +330,22 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     return this.topology.elements.length === 0;
   }
 
+  // The vehicle whose label the pointer is over; its battery is shown as a number.
+  private hoveredVehicleId: string | null = null;
+
   ngAfterViewInit(): void {
+    // Playback redraws the labels on every frame, so hovering is followed on
+    // the SVG itself, which stays, rather than on a label that is replaced.
+    const svg = this.svgRef!.nativeElement;
+    const hover = (vehicleId: string | null) => {
+      if (vehicleId !== this.hoveredVehicleId) {
+        this.hoveredVehicleId = vehicleId;
+        this.drawVehicles();
+      }
+    };
+    svg.addEventListener('pointermove', (event) =>
+      hover((event.target as Element).closest<SVGGElement>('[data-vehicle-id]')?.dataset['vehicleId'] ?? null));
+    svg.addEventListener('pointerleave', () => hover(null));
     this.render();
   }
 
@@ -456,7 +475,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('y1', (edge) => lineOf(edge).y1)
       .attr('x2', (edge) => lineOf(edge).x2)
       .attr('y2', (edge) => lineOf(edge).y2)
-      .attr('stroke', (edge) => isSelectedEdge(edge) ? '#13795b' : '#b0aea5')
+      .attr('stroke', (edge) => isSelectedEdge(edge) ? '#c15f3c' : '#b0aea5')
       .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 4 : 2.5)
       .attr('stroke-linecap', 'round')
       .attr('marker-end', (edge) => {
@@ -578,26 +597,29 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('fill', 'none')
       .attr('stroke', CANDIDATE_STROKE)
       .attr('stroke-width', 4)
-      .attr('opacity', (element) => isNewCandidate(element) ? 0.3 : 1);
+      .attr('opacity', (element) => isNewCandidate(element) ? 0.7 : 1);
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       // A new candidate starts breathing from its dim point, so the fade-in
       // and the first brightening rise together instead of flashing.
       const now = this.svgRef.nativeElement.getCurrentTime();
       ring.append('animate')
         .attr('attributeName', 'opacity')
-        .attr('values', '0.3;1;0.3')
+        .attr('values', '0.7;1;0.7')
         .attr('dur', '1.8s')
         .attr('begin', (element) => isNewCandidate(element) ? `${now}s` : '0s')
         .attr('repeatCount', 'indefinite');
     }
 
     if (animating) {
-      // Once the arrow arrives a green ring is traced around the newly
+      // Once the arrow arrives a ring is traced around the newly
       // selected node while its fill fades in.
       const arrivedId = this.selectedPath[this.selectedPath.length - 1];
       const firstVisit = this.selectedPath.indexOf(arrivedId) === this.selectedPath.length - 1;
       const arrived = node.filter((element) => element.id === arrivedId);
       const shape = arrived.select<SVGRectElement>('.node-shape');
+      const restoreShape = () => shape
+        .attr('stroke', (element) => this.nodeStroke(element, selectedIds, conflictIds, playbackIds))
+        .attr('stroke-width', 4);
       shape.attr('stroke', '#73726c').attr('stroke-width', 2);
       if (firstVisit) {
         shape
@@ -622,7 +644,11 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         .transition()
         .delay(ARROW_GROW_MS)
         .duration(RING_TRACE_MS)
-        .attr('stroke-dashoffset', 0);
+        .attr('stroke-dashoffset', 0)
+        .on('end', function () {
+          restoreShape();
+          d3.select(this).remove();
+        });
     }
 
     const configurable = (element: TrackElementResponse) => this.mapPurpose === 'config' && element.elementType === 'BLOCK';
@@ -663,7 +689,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('x', 0)
       .attr('y', -29)
       .attr('text-anchor', 'middle')
-      .attr('fill', '#075f46')
+      .attr('fill', '#704633')
       .attr('font-size', 11)
       .attr('font-weight', 800)
       .text((element) => visitLabel(visits.get(element.id)?.map((item) => item.index) ?? []));
@@ -711,7 +737,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('height', 24)
       .attr('rx', 12)
       .attr('fill', '#ffffff')
-      .attr('stroke', '#13795b')
+      .attr('stroke', '#c15f3c')
       .attr('stroke-width', 1.5);
     control.append('text')
       .attr('text-anchor', 'middle')
@@ -748,7 +774,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         }
       });
     button.append('title').text(({ label }) => label);
-    button.append('circle').attr('r', 9).attr('fill', '#13795b');
+    button.append('circle').attr('r', 9).attr('fill', '#c15f3c');
     button.append('text')
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
@@ -838,7 +864,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('orient', 'auto')
       .append('path')
       .attr('d', 'M0,-5L10,0L0,5')
-      .attr('fill', '#13795b');
+      .attr('fill', '#c15f3c');
   }
 
   private drawStationBands(
@@ -1001,8 +1027,15 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         }
         return `translate(${x},${y - 38 - stack * 32})`;
       });
-    markers.append('title')
-      .text(({ vehicle }) => `${vehicle.vehicleId} at ${vehicle.elementId}, battery ${Math.round(vehicle.battery)}%`);
+    const describe = ({ vehicle }: Placement) => {
+      const battery = `battery ${Math.round(vehicle.battery)}%${vehicle.charging ? ', charging' : ''}`;
+      // Only the viewer knows every service; in the editor the draft has no number yet.
+      const service = this.mapPurpose !== 'viewer' ? '' : vehicle.serviceId === null ? 'idle, ' : `service #${vehicle.serviceId}, `;
+      return `${service}${battery}`;
+    };
+    markers
+      .attr('data-vehicle-id', ({ vehicle }) => vehicle.vehicleId)
+      .attr('aria-label', (placement) => `${placement.vehicle.vehicleId} at ${placement.vehicle.elementId}, ${describe(placement)}`);
     // The same glowing outline around the label of the vehicle being edited.
     this.pulse(markers.filter(({ vehicle }) => vehicle.vehicleId === this.focusVehicleId)
       .append('rect')
@@ -1051,6 +1084,34 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-weight', 800)
       .text(({ vehicle }) => vehicle.elementId);
     this.drawBatteries(markers);
+    // The hovered label gets a bubble above it with the battery as a number.
+    const bubble = markers.filter(({ vehicle }) => vehicle.vehicleId === this.hoveredVehicleId)
+      .raise()
+      .append('g')
+      .attr('pointer-events', 'none');
+    const bubbleWidth = (placement: Placement) => describe(placement).length * 6.2 + 14;
+    // Kept inside the map: near an edge the bubble slides sideways over its label.
+    const mapWidth = compact ? 520 : VIEWBOX_WIDTH;
+    bubble.attr('transform', (placement) => {
+      const labelX = compact ? placement.x + (placement.x < 260 ? 78 : -78) : placement.x;
+      const half = bubbleWidth(placement) / 2 + 4;
+      const centre = Math.min(mapWidth - half, Math.max(half, labelX));
+      return `translate(${centre - labelX},-30)`;
+    });
+    bubble.append('rect')
+      .attr('x', (placement) => -bubbleWidth(placement) / 2)
+      .attr('y', -10)
+      .attr('width', bubbleWidth)
+      .attr('height', 20)
+      .attr('rx', 4)
+      .attr('fill', '#141413');
+    bubble.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('fill', '#ffffff')
+      .attr('font-size', 11)
+      .attr('font-weight', 700)
+      .text(describe);
   }
 
   private drawBatteries<Placement extends { vehicle: PlaybackVehicleState }>(
@@ -1101,8 +1162,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .append('path')
       .attr('class', 'charging')
       .attr('d', 'M15.5,-2 L8.5,6.6 L12.6,6.6 L11,14 L18.5,5 L14.2,5 Z')
-      .attr('fill', '#ffc400')
-      .attr('stroke', '#5c3d00')
+      .attr('fill', CHARGING_BOLT_FILL)
+      .attr('stroke', CHARGING_BOLT_STROKE)
       .attr('stroke-width', 0.8)
       .attr('stroke-linejoin', 'round');
   }
@@ -1170,13 +1231,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       return '#fee4e2';
     }
     if (playback.has(element.id)) {
-      return '#dff3f8';
+      return '#e8edf0';
     }
     if (selected.has(element.id)) {
-      return '#ccebdd';
+      return '#f3e3da';
     }
     if (element.elementType === 'YARD') {
-      return '#e3dacc';
+      return '#ebe9e0';
     }
     if (element.elementType === 'PLATFORM') {
       return '#f0eee6';
@@ -1194,10 +1255,10 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       return '#b42318';
     }
     if (playback.has(element.id)) {
-      return '#0b6f8f';
+      return '#647f91';
     }
     if (selected.has(element.id)) {
-      return '#13795b';
+      return '#c15f3c';
     }
     return '#73726c';
   }

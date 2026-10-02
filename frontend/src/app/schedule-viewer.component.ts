@@ -1,4 +1,3 @@
-import { DecimalPipe } from '@angular/common';
 import { Component, DestroyRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -10,12 +9,13 @@ import { errorMessage, formatClockTime, formatDuration, formatForDisplay, format
 import { conflictsAt, playbackSliderPosition, scheduleRange, vehicleStatesAt } from './playback';
 import { buildVehicleOverviews, serviceEndTime, servicePositions } from './schedule-overview';
 import { ServicePathStripComponent } from './service-path-strip.component';
+import { taipeiLocal } from './service-timing';
 import { TrackMapComponent } from './track-map.component';
 import { VehicleIconComponent } from './vehicle-icon.component';
 
 @Component({
   selector: 'app-schedule-viewer',
-  imports: [DecimalPipe, FormsModule, ServicePathStripComponent, TrackMapComponent, VehicleIconComponent],
+  imports: [FormsModule, ServicePathStripComponent, TrackMapComponent, VehicleIconComponent],
   templateUrl: './schedule-viewer.component.html',
   styleUrl: './scheduling-page.css',
 })
@@ -54,6 +54,12 @@ export class ScheduleViewerComponent implements OnInit, OnDestroy {
   ]);
   readonly playbackPosition = computed(() => {
     return playbackSliderPosition(scheduleRange(this.analysis()), this.playbackTimeMs());
+  });
+  // The label above the cursor: the clock time, with the date once playback leaves the first day.
+  readonly playbackAxisTime = computed(() => {
+    const instant = this.playbackTimeMs();
+    const start = this.analysis().startTime;
+    return instant === null || start === null ? '' : formatTimelineTime(taipeiLocal(instant), start);
   });
   readonly playbackClock = computed(() => {
     const instant = this.playbackTimeMs();

@@ -267,6 +267,14 @@ export class ScheduleEditorComponent implements OnInit {
     return formatTimelineTime(taipeiLocal(instant), taipeiLocal(reference));
   }
 
+  slotDate(instant: number): string {
+    return formatServiceDate(taipeiLocal(instant));
+  }
+
+  slotClock(instant: number): string {
+    return formatClockTime(taipeiLocal(instant));
+  }
+
   ngOnInit(): void {
     this.destroyRef.onDestroy(() => this.stopMapAdvance());
     this.refreshAll();
