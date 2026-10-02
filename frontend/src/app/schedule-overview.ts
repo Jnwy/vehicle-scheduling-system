@@ -1,3 +1,4 @@
+import { CHARGE_SECONDS_PER_UNIT } from './battery-preview';
 import type { ScheduleAnalysis, ServiceResponse, TimelineInterval } from './models';
 import { scheduleRange } from './playback';
 
@@ -13,6 +14,8 @@ export interface VehicleOverview {
   services: ServiceResponse[];
   serviceBars: OverviewBar[];
   conflictBars: OverviewBar[];
+  // When the vehicle waits in the yard with its battery still rising.
+  chargingBars: OverviewBar[];
 }
 
 export function serviceEndTime(service: ServiceResponse): string {
@@ -100,6 +103,20 @@ export function buildVehicleOverviews(
       conflictBars: analysis.conflicts
         .filter((conflict) => conflict.vehicleIds.includes(vehicleId))
         .flatMap((conflict) => bar('', conflict.message, conflict.startTime, conflict.endTime)),
+      chargingBars: (analysis.vehicles.find((vehicle) => vehicle.vehicleId === vehicleId)?.segments ?? [])
+        .filter((segment) => segment.segmentType === 'IDLE' && segment.batteryEnd > segment.batteryStart)
+        .flatMap((segment) => {
+          // A wait longer than the charge needs ends the bar when the battery is full.
+          const charged = Date.parse(segment.startTime)
+            + (segment.batteryEnd - segment.batteryStart) * CHARGE_SECONDS_PER_UNIT * 1000;
+          const end = new Date(Math.min(Date.parse(segment.endTime), charged)).toISOString();
+          return bar(
+            '',
+            `Charging in the yard: ${Math.floor(segment.batteryStart)} to ${Math.floor(segment.batteryEnd)} battery units`,
+            segment.startTime,
+            end,
+          );
+        }),
     };
   });
 }

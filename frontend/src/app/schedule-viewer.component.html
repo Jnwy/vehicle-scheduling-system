@@ -55,6 +55,9 @@
                 @for (bar of vehicle.serviceBars; track $index) {
                   <span class="axis-service" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title">{{ bar.label }}</span>
                 }
+                @for (bar of vehicle.chargingBars; track $index) {
+                  <span class="axis-charging" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
+                }
                 @for (bar of vehicle.conflictBars; track $index) {
                   <span class="axis-conflict" [style.left.%]="bar.leftPercent" [style.width.%]="bar.widthPercent" [attr.title]="bar.title"></span>
                 }
@@ -125,7 +128,7 @@
             <article class="service-item">
               <div class="service-summary">
                 <div>
-                  <h3 class="with-vehicle"><app-vehicle-icon [vehicleId]="service.vehicleId" />#{{ service.id }} | {{ service.vehicleId }}</h3>
+                  <h3>#{{ service.id }} | {{ service.vehicleId }}</h3>
                   <div class="service-timecard">
                     <span class="service-date">{{ formatServiceDate(service.startTime) }}</span>
                     <div class="service-clock">

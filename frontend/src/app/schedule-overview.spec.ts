@@ -74,7 +74,7 @@ describe('buildVehicleOverviews', () => {
   it('includes a known vehicle that has no services', () => {
     const overviews = buildVehicleOverviews([service(1, 'V1', 0, 20)], analysis());
 
-    expect(overviews[1]).toMatchObject({ vehicleId: 'V2', services: [], serviceBars: [], conflictBars: [] });
+    expect(overviews[1]).toMatchObject({ vehicleId: 'V2', services: [], serviceBars: [], conflictBars: [], chargingBars: [] });
   });
 
   it('includes a vehicle that appears only in the service list', () => {
@@ -95,6 +95,29 @@ describe('buildVehicleOverviews', () => {
     const [v1] = buildVehicleOverviews([service(1, 'V1', 50, 150)], analysis());
 
     expect(v1.serviceBars[0]).toMatchObject({ leftPercent: 50, widthPercent: 50 });
+  });
+
+  it('marks the time a vehicle charges in the yard, up to a full battery', () => {
+    const idle = (start: number, end: number, batteryStart: number, batteryEnd: number, elementId = 'Y') => ({
+      segmentType: 'IDLE' as const, serviceId: null, pathIndex: null, elementId,
+      startTime: at(start), endTime: at(end), batteryStart, batteryEnd,
+    });
+    const [v1] = buildVehicleOverviews([], analysis({
+      vehicles: [{
+        vehicleId: 'V1',
+        segments: [
+          // Two units take 24 seconds; the wait ends there.
+          idle(10, 34, 78, 80),
+          // Waiting at a platform does not charge.
+          idle(40, 50, 80, 80, 'P1A'),
+          // One unit to full takes 12 seconds, although the wait lasts 40.
+          idle(60, 100, 99, 100),
+        ],
+      }],
+    }));
+
+    expect(v1.chargingBars.map((bar) => [bar.leftPercent, bar.widthPercent])).toEqual([[10, 24], [60, 12]]);
+    expect(v1.chargingBars[0].title).toBe('Charging in the yard: 78 to 80 battery units');
   });
 
   it('shows a conflict only on the vehicles it involves', () => {

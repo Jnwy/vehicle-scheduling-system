@@ -1331,6 +1331,15 @@ button.vehicle-group-header:hover {
   .table-row,
   .timeline .table-row,
   .playback-controls,
+/* A thin strip along the bottom of the row while the vehicle charges. */
+.axis-charging {
+  position: absolute;
+  bottom: 0;
+  height: 5px;
+  min-width: 3px;
+  background: #d4a27f;
+}
+
   .vehicle-status {
     grid-template-columns: 1fr;
   }
