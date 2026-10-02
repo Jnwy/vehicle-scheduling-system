@@ -25,7 +25,8 @@ const CANDIDATE_HALO = '#93c5fd';
 
 const ARROW_GROW_MS = 350;
 const RING_TRACE_MS = 450;
-const CANDIDATE_FADE_MS = 300;
+const CANDIDATE_FADE_OUT_MS = 250;
+const CANDIDATE_FADE_IN_MS = 700;
 
 // Crossover blocks sit on the straight line between their two neighbours and
 // away from its midpoint, so each pair (B8/B10, B4/B13) draws as an X as in
@@ -265,27 +266,29 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     // Breathing halo behind each candidate signals that it can be clicked.
     // SMIL is used because Angular's scoped component styles do not reach
     // elements created by d3.
-    // While the arrow grows, the previous candidates stay lit; on arrival
-    // they fade out and the new candidates fade in. The fade runs on a
-    // wrapper group because SMIL owns the rect's opacity.
+    // The previous candidates fade out as soon as the click lands; the new
+    // candidates fade in once the arrow arrives. The fade runs on a wrapper
+    // group because SMIL owns the rect's opacity.
+    const isNewCandidate = (element: TrackElementResponse) => animating && !previousEligibleIds.has(element.id);
+    const changeDelay = (element: TrackElementResponse) => isNewCandidate(element) ? ARROW_GROW_MS : 0;
+    const changeDuration = (element: TrackElementResponse) => isNewCandidate(element) ? CANDIDATE_FADE_IN_MS : CANDIDATE_FADE_OUT_MS;
     const haloGroup = node.filter((element) => eligibleIds.has(element.id) || previousEligibleIds.has(element.id))
       .append('g');
     if (animating) {
       node.style('opacity', dimOpacity(previousEligibleIds, previousSelectedIds))
         .transition('dim')
-        .delay(ARROW_GROW_MS)
-        .duration(CANDIDATE_FADE_MS)
+        .delay(changeDelay)
+        .duration(changeDuration)
         .style('opacity', dimOpacity(eligibleIds, selectedIds));
-      haloGroup.filter((element) => !previousEligibleIds.has(element.id))
+      haloGroup.filter(isNewCandidate)
         .attr('opacity', 0)
         .transition()
         .delay(ARROW_GROW_MS)
-        .duration(CANDIDATE_FADE_MS)
+        .duration(CANDIDATE_FADE_IN_MS)
         .attr('opacity', 1);
       haloGroup.filter((element) => !eligibleIds.has(element.id))
         .transition()
-        .delay(ARROW_GROW_MS)
-        .duration(CANDIDATE_FADE_MS)
+        .duration(CANDIDATE_FADE_OUT_MS)
         .attr('opacity', 0)
         .remove();
     }
@@ -297,12 +300,17 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('height', (element) => element.elementType === 'BLOCK' ? 44 : 54)
       .attr('rx', (element) => element.elementType === 'YARD' ? 8 : element.elementType === 'PLATFORM' ? 11 : 22)
       .attr('fill', CANDIDATE_HALO)
-      .attr('opacity', 0.6);
+      .attr('opacity', (element) => isNewCandidate(element) ? 0.15 : 0.6);
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // A new candidate starts breathing from its dim point at arrival, so
+      // the fade-in and the first brightening rise together instead of
+      // flashing.
+      const arrival = this.svgRef.nativeElement.getCurrentTime() + ARROW_GROW_MS / 1000;
       halo.append('animate')
         .attr('attributeName', 'opacity')
-        .attr('values', '0.85;0.15;0.85')
+        .attr('values', '0.15;0.85;0.15')
         .attr('dur', '1.8s')
+        .attr('begin', (element) => isNewCandidate(element) ? `${arrival}s` : '0s')
         .attr('repeatCount', 'indefinite');
     }
 
@@ -324,13 +332,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         .attr('stroke', (element) => this.nodeStroke(element, previousEligibleIds, previousSelectedIds, conflictIds, playbackIds))
         .attr('stroke-width', strokeWidth(previousEligibleIds, previousSelectedIds))
         .transition('stroke')
-        .delay(ARROW_GROW_MS)
-        .duration(CANDIDATE_FADE_MS)
+        .delay(changeDelay)
+        .duration(changeDuration)
         .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
         .attr('stroke-width', strokeWidth(eligibleIds, selectedIds));
 
-      // The newly selected node keeps its candidate look until the arrow
-      // arrives, then a green ring is traced around it while the fill fades in.
+      // The newly selected node drops its candidate look on click; once the
+      // arrow arrives a green ring is traced around it while the fill fades in.
       const arrivedId = this.selectedPath[this.selectedPath.length - 1];
       const firstVisit = this.selectedPath.indexOf(arrivedId) === this.selectedPath.length - 1;
       const arrived = node.filter((element) => element.id === arrivedId);
@@ -339,8 +347,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         .attr('stroke', CANDIDATE_STROKE)
         .attr('stroke-width', 4)
         .transition('stroke')
-        .delay(ARROW_GROW_MS)
-        .duration(CANDIDATE_FADE_MS)
+        .duration(CANDIDATE_FADE_OUT_MS)
         .attr('stroke', '#667889')
         .attr('stroke-width', 2);
       if (firstVisit) {
