@@ -3,6 +3,7 @@ import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, Input
 import * as d3 from 'd3';
 
 import { PlaybackVehicleState, TopologyResponse, TrackElementResponse } from './models';
+import { nextPathSteps } from './path-steps';
 
 interface Point {
   x: number;
@@ -86,8 +87,15 @@ function outlineDistance(elementType: string | undefined, ux: number, uy: number
   return along + Math.sqrt(along * along - (cornerX * cornerX + cornerY * cornerY - radius * radius));
 }
 
+function isBlockType(elementType: string | undefined): boolean {
+  return elementType === 'BLOCK' || elementType === 'CONFIG_BLOCK';
+}
+
 // A connection line from the source outline to just short of the target
 // outline, leaving room for the arrowhead whose tip then meets the target.
+// A block is itself a piece of track, so at a block the line runs right up
+// to the outline with no gap or arrowhead: the track reads as passing
+// through the block's label, and heads only point at yards and platforms.
 function connectionLine(
   from: Point,
   to: Point,
@@ -99,8 +107,8 @@ function connectionLine(
   const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
   const ux = (to.x - from.x) / length;
   const uy = (to.y - from.y) / length;
-  const startOffset = outlineDistance(fromType, ux, uy) + NODE_GAP + startArrowLength;
-  const endOffset = outlineDistance(toType, ux, uy) + NODE_GAP + arrowLength;
+  const startOffset = outlineDistance(fromType, ux, uy) + (isBlockType(fromType) ? 0 : NODE_GAP + startArrowLength);
+  const endOffset = outlineDistance(toType, ux, uy) + (isBlockType(toType) ? 0 : NODE_GAP + arrowLength);
   return {
     x1: from.x + ux * startOffset,
     y1: from.y + uy * startOffset,
@@ -129,6 +137,7 @@ function connectionLine(
       @if (mapPurpose === 'editor') {
         <span><i class="selected"></i>Selected path</span>
         <span><i class="candidate"></i>Available next</span>
+        <span><i class="blocked"></i>Blocked next</span>
       }
       @if (mapPurpose === 'viewer') {
         <span><i class="vehicle"></i>Playback vehicle position</span>
@@ -156,6 +165,7 @@ function connectionLine(
     .legend .field { width: 20px; border-color: #235f7a; }
     .legend .selected { border-color: #13795b; background: #ccebdd; }
     .legend .candidate { border-color: #2563eb; animation: candidate-breathe 1.8s ease-in-out infinite; }
+    .legend .blocked { border-style: dashed; border-color: #b42318; background: #f1f3f5; }
     @keyframes candidate-breathe {
       0%, 100% { border-color: #2563eb; }
       50% { border-color: rgba(37, 99, 235, 0.3); }
@@ -178,6 +188,8 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   @Input() interactive = false;
   @Input() vehicles: PlaybackVehicleState[] = [];
   @Input() conflictElementIds: string[] = [];
+  // Next elements that cannot be entered right now, with the reason shown on hover.
+  @Input() blockedElements: Record<string, string> = {};
   @Input() mapPurpose: 'editor' | 'viewer' | 'config' = 'editor';
   @Output() readonly elementSelected = new EventEmitter<string>();
   @Output() readonly blockTraversalChanged = new EventEmitter<BlockTraversalChange>();
@@ -189,7 +201,13 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     return this.interactive ? 'Service path editing map' : 'Vehicle schedule playback map';
   }
 
-  private growingEdge: string | null = null;
+  // The edges added by the latest click, in path order, and the path before it.
+  private growingEdges: string[] = [];
+  private pathBeforeGrowth: string[] = [];
+
+  private isBlock(elementId: string): boolean {
+    return this.topology.elements.some((element) => element.id === elementId && element.elementType === 'BLOCK');
+  }
 
   get topologyMissing(): boolean {
     return this.topology.elements.length === 0;
@@ -202,14 +220,19 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     const pathChange = changes['selectedPath'];
     if (pathChange && !pathChange.firstChange) {
-      // Only a single appended element animates; undo, clear and loading a
-      // saved path redraw without motion.
+      // Only one click's worth of appended elements animates (a stop and the
+      // blocks leading to it); undo, clear and loading a saved path redraw
+      // without motion.
       const previous = (pathChange.previousValue ?? []) as string[];
       const current = this.selectedPath;
-      const appendedOne = current.length === previous.length + 1
-        && current.length >= 2
-        && previous.every((elementId, index) => elementId === current[index]);
-      this.growingEdge = appendedOne ? `${current.at(-2)}->${current.at(-1)}` : null;
+      const appended = previous.length >= 1
+        && current.length > previous.length
+        && previous.every((elementId, index) => elementId === current[index])
+        && current.slice(previous.length, -1).every((elementId) => this.isBlock(elementId));
+      this.growingEdges = appended
+        ? current.slice(previous.length).map((elementId, offset) => `${current[previous.length + offset - 1]}->${elementId}`)
+        : [];
+      this.pathBeforeGrowth = previous;
     }
     if (this.svgRef && Object.keys(changes).length > 0) {
       this.render();
@@ -289,40 +312,47 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('stroke', (edge) => isSelectedEdge(edge) ? '#13795b' : '#9aabba')
       .attr('stroke-width', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 4 : 2.5)
       .attr('stroke-linecap', 'round')
-      .attr('marker-end', (edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`) ? 'url(#arrow-selected)' : 'url(#arrow)')
+      .attr('marker-end', (edge) => {
+        if (isBlockType(elementTypes.get(edge.toElementId))) {
+          return null;
+        }
+        return isSelectedEdge(edge) ? 'url(#arrow-selected)' : 'url(#arrow)';
+      })
       // Bidirectional connections overlap, so selected edges must be drawn
       // last or the grey reverse edge covers them.
       .filter((edge) => selectedEdges.has(`${edge.fromElementId}->${edge.toElementId}`))
       .raise();
 
-    const growingEdge = this.growingEdge;
-    this.growingEdge = null;
-    if (growingEdge && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const growingEdges = this.growingEdges;
+    this.growingEdges = [];
+    const animating = growingEdges.length > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // The edges of one click grow one after another, sharing the time a single edge takes.
+    const edgeGrowMs = ARROW_GROW_MS / Math.max(growingEdges.length, 1);
+    if (animating) {
+      const growthOrder = (edge: Connection) => growingEdges.indexOf(`${edge.fromElementId}->${edge.toElementId}`);
       svg.select('.connections')
         .selectAll<SVGLineElement, Connection>('line')
-        .filter((edge) => `${edge.fromElementId}->${edge.toElementId}` === growingEdge)
+        .filter((edge) => growthOrder(edge) >= 0)
         // Starts almost at zero length (a marker needs some length to take
         // its direction from), with the head just outside the source node.
         .each(function (edge) {
           const line = lineOf(edge);
           d3.select(this)
             .attr('x2', line.x1 + (line.x2 - line.x1) * 0.02)
-            .attr('y2', line.y1 + (line.y2 - line.y1) * 0.02);
+            .attr('y2', line.y1 + (line.y2 - line.y1) * 0.02)
+            .attr('opacity', growthOrder(edge) === 0 ? 1 : 0);
         })
         .transition()
-        .duration(ARROW_GROW_MS)
+        .delay((edge) => growthOrder(edge) * edgeGrowMs)
+        .duration(edgeGrowMs)
+        .ease(d3.easeLinear)
+        .attr('opacity', 1)
         .attr('x2', (edge) => lineOf(edge).x2)
         .attr('y2', (edge) => lineOf(edge).y2);
     }
 
-    const animating = growingEdge !== null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const previousEnd = this.selectedPath.at(-2);
-    const previousEligibleIds = animating
-      ? new Set(this.topology.connections
-          .filter((connection) => connection.fromElementId === previousEnd)
-          .map((connection) => connection.toElementId))
-      : eligibleIds;
-    const previousSelectedIds = animating ? new Set(this.selectedPath.slice(0, -1)) : selectedIds;
+    const previousEligibleIds = animating ? this.eligibleElementIds(this.pathBeforeGrowth) : eligibleIds;
+    const previousSelectedIds = animating ? new Set(this.pathBeforeGrowth) : selectedIds;
     const dimOpacity = (eligible: Set<string>, selected: Set<string>) => (element: TrackElementResponse) =>
       this.interactive && eligible.size > 0 && !eligible.has(element.id) && !selected.has(element.id) ? 0.38 : 1;
 
@@ -469,6 +499,26 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('font-size', 11)
       .attr('font-weight', 800)
       .text((element) => visits.get(element.id)?.map((item) => item.index).join(',') ?? '');
+
+    // Blocked candidates are unclickable like any other unreachable element.
+    // They are greyed by colour rather than opacity, because nothing is
+    // dimmed when every candidate is blocked; the label and tooltip say why.
+    const blocked = node.filter((element) => this.interactive && element.id in this.blockedElements);
+    blocked.select('.node-shape').attr('fill', '#eceff3').attr('stroke', '#b42318').attr('stroke-dasharray', '5 4');
+    blocked.select('text').attr('fill', '#8a96a3');
+    blocked.append('title').text((element) => `${element.id} is blocked: ${this.blockedElements[element.id]}`);
+    // Drawn outside the dimmed node group so the label stays readable.
+    svg.append('g')
+      .selectAll('text')
+      .data(elements.filter((element) => this.interactive && element.id in this.blockedElements))
+      .join('text')
+      .attr('x', (element) => points[element.id].x)
+      .attr('y', (element) => points[element.id].y + 31)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#b42318')
+      .attr('font-size', 10)
+      .attr('font-weight', 800)
+      .text('blocked');
 
     this.drawVehicles(svg, points, compact);
   }
@@ -656,19 +706,14 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     );
   }
 
-  private eligibleElementIds(): Set<string> {
+  // A vehicle only stands at a yard or platform, so the clickable elements
+  // are the stops a path can start at or continue to; see path-steps.ts.
+  private eligibleElementIds(path = this.selectedPath): Set<string> {
     if (!this.interactive) {
       return new Set<string>();
     }
-    if (this.selectedPath.length === 0) {
-      return new Set(this.topology.elements.map((element) => element.id));
-    }
-    const current = this.selectedPath[this.selectedPath.length - 1];
-    return new Set(
-      this.topology.connections
-        .filter((connection) => connection.fromElementId === current)
-        .map((connection) => connection.toElementId),
-    );
+    const reachable = [...nextPathSteps(path, this.topology).keys()];
+    return new Set(reachable.filter((elementId) => !(elementId in this.blockedElements)));
   }
 
   private select(elementId: string, eligibleIds: Set<string>): void {

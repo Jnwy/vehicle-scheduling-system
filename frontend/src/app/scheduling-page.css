@@ -632,6 +632,33 @@ select:focus {
   color: #8a96a3;
 }
 
+.blockers {
+  padding: 8px 12px;
+  border: 1px solid #efc3c0;
+  border-radius: 8px;
+  background: #fff1f0;
+  color: #9c2f24;
+  font-size: 13px;
+}
+
+.blockers ul,
+.map-hints {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.map-hints {
+  margin: 0 0 10px;
+  color: #9c2f24;
+  font-size: 13px;
+}
+
+.delete-blocker {
+  margin-top: 6px;
+  color: #9c2f24;
+  font-size: 12px;
+}
+
 .slot-warning {
   padding: 8px 10px;
   border: 1px solid #e8cc8a;

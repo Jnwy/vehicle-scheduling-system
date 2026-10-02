@@ -13,7 +13,9 @@
     <div>
       <h2>Path editor map</h2>
       @if (pathSelection().length === 0) {
-        <p>Choose a starting track element for the editable service path.</p>
+        <p>Choose the platform or yard where the service starts.</p>
+      } @else {
+        <p>Click the next platform or yard; the blocks on the way are added to the path.</p>
       }
     </div>
   </div>
@@ -33,12 +35,21 @@
     </div>
   </div>
 
+  @if (blockedNextList().length > 0) {
+    <ul class="map-hints" role="status">
+      @for (entry of blockedNextList(); track entry[0]) {
+        <li><strong>{{ entry[0] }}</strong> is blocked: {{ entry[1] }}</li>
+      }
+    </ul>
+  }
+
   <app-track-map
     [topology]="topology()"
     [selectedPath]="pathSelection()"
     [interactive]="!isBusy()"
     [vehicles]="[]"
-    [conflictElementIds]="[]"
+    [conflictElementIds]="conflictElementIds()"
+    [blockedElements]="blockedNext()"
     mapPurpose="editor"
     (elementSelected)="selectPathElement($event)"
     />
@@ -98,10 +109,14 @@
             </div>
           </div>
 
-          @if (busyAtStart; as busy) {
-            <div class="slot-warning" role="alert">
-              {{ serviceForm.vehicleId }} is running service #{{ busy.serviceId }} at this time
-              ({{ slotTime(busy.start) }} to {{ slotTime(busy.end) }}). Pick a free period below.
+          @if (blockers().length > 0) {
+            <div class="blockers" role="alert">
+              <strong>This service would be rejected:</strong>
+              <ul>
+                @for (blocker of blockers(); track $index) {
+                  <li>{{ blocker }}</li>
+                }
+              </ul>
             </div>
           }
 
@@ -190,7 +205,7 @@
           }
 
           <div class="form-actions">
-            <button type="submit" [disabled]="isBusy() || !!timingError()">
+            <button type="submit" [disabled]="isBusy() || !!timingError() || blockers().length > 0">
               {{ savingService() ? 'Saving' : editingServiceId() === null ? 'Create service' : 'Update service' }}
             </button>
             <button type="button" class="secondary" (click)="resetForm()">Reset</button>
@@ -225,9 +240,18 @@
                 {{ expandedServiceIds().has(service.id) ? 'Hide timeline' : 'Timeline' }}
               </button>
               <button type="button" class="small" [disabled]="isBusy()" (click)="startEdit(service)">Edit</button>
-              <button type="button" class="danger small" [disabled]="isBusy()" (click)="confirmDelete(service)">Delete</button>
+              <button
+                type="button"
+                class="danger small"
+                [disabled]="isBusy() || deleteBlockers().has(service.id)"
+                [attr.title]="deleteBlockers().get(service.id) ?? null"
+                (click)="confirmDelete(service)"
+                >Delete</button>
             </div>
           </div>
+          @if (deleteBlockers().get(service.id); as reason) {
+            <p class="delete-blocker">Cannot delete: {{ reason }}</p>
+          }
           @if (expandedServiceIds().has(service.id)) {
             <div class="timeline">
               <div class="table-row table-head">

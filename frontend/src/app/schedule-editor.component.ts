@@ -8,7 +8,12 @@ import { forkJoin } from 'rxjs';
 import { SchedulingApi } from './scheduling-api.service';
 import { ServiceRequest, ServiceResponse, TopologyResponse, VehicleResponse } from './models';
 import { errorMessage, formatForDisplay, fromDatetimeLocal, toDatetimeLocal } from './page-helpers';
+import { nextPathSteps, withoutLastStep } from './path-steps';
 import { TrackMapComponent } from './track-map.component';
+import {
+  ScheduleWindow, VehicleProblem, blockedNextElements, candidateTimeline, deletionProblem, interlockingConflicts,
+  pathEndpointProblems, savedWindow, vehicleProblems,
+} from './service-conflicts';
 import {
   BusyTimeOptions, StartTimeParts, VehicleBusyWindow, VehicleSlot, busyTimeOptions, composeStartTime, daysInMonth, derivePlatformTimings, nextStartTime,
   savedTimingsAreStale, splitStartTime, taipeiLocal, vehicleBusyWindows, vehicleContinuation, vehiclePositionAt,
@@ -53,6 +58,24 @@ export class ScheduleEditorComponent implements OnInit {
   readonly missingBlockIds = signal<string[]>([]);
   readonly editingServiceId = signal<number | null>(null);
   readonly pathSelection = signal<string[]>(['Y']);
+  // Live previews of what the backend would reject; see service-conflicts.ts.
+  readonly blockers = signal<string[]>([]);
+  readonly conflictElementIds = signal<string[]>([]);
+  readonly blockedNext = signal<Record<string, string>>({});
+  readonly blockedNextList = computed(() => Object.entries(this.blockedNext()));
+  readonly deleteBlockers = computed(() => {
+    const windows = this.services().map(savedWindow);
+    const reasons = new Map<number, string>();
+    for (const window of windows) {
+      const problem = deletionProblem(window, windows);
+      if (problem !== null && problem.kind === 'continuity') {
+        reasons.set(window.serviceId!, `${window.vehicleId} would have to jump from ${problem.from.endElementId} `
+          + `(end of service #${problem.from.serviceId}) to ${problem.to.startElementId} `
+          + `(start of service #${problem.to.serviceId}).`);
+      }
+    }
+    return reasons;
+  });
   readonly isBusy = computed(() => this.loadingInitial() || this.savingService());
   readonly formatForDisplay = formatForDisplay;
 
@@ -154,6 +177,7 @@ export class ScheduleEditorComponent implements OnInit {
           this.serviceForm.vehicleId = vehicles[0].id;
           this.startFromVehicleEnd();
         }
+        this.refreshConflicts();
         this.loadingInitial.set(false);
       },
       error: (error: unknown) => {
@@ -198,6 +222,8 @@ export class ScheduleEditorComponent implements OnInit {
     // An edited service keeps its own start; only a new service follows the vehicle.
     if (this.editingServiceId() === null) {
       this.startFromVehicleEnd();
+    } else {
+      this.refreshConflicts();
     }
   }
 
@@ -250,13 +276,14 @@ export class ScheduleEditorComponent implements OnInit {
     this.recalculateTimings();
   }
 
+  // A click on the next stop also adds the blocks leading to it; see path-steps.ts.
   selectPathElement(elementId: string): void {
-    const next = [...this.pathSelection(), elementId];
-    this.setPathSelection(next);
+    const steps = nextPathSteps(this.pathSelection(), this.topology()).get(elementId) ?? [elementId];
+    this.setPathSelection([...this.pathSelection(), ...steps]);
   }
 
   undoPathElement(): void {
-    this.setPathSelection(this.pathSelection().slice(0, -1));
+    this.setPathSelection(withoutLastStep(this.pathSelection(), this.topology()));
   }
 
   resetPathToY(): void {
@@ -268,7 +295,7 @@ export class ScheduleEditorComponent implements OnInit {
   }
 
   submitService(): void {
-    if (this.isBusy()) {
+    if (this.isBusy() || this.blockers().length > 0) {
       return;
     }
     const request = this.buildServiceRequest();
@@ -474,6 +501,7 @@ export class ScheduleEditorComponent implements OnInit {
     );
     this.timingError.set(result.error);
     this.missingBlockIds.set(result.missingBlockIds);
+    this.refreshConflicts();
     // Opening a persisted schedule must not replace its saved timeline snapshot.
     if (preserveSaved) {
       return;
@@ -484,6 +512,70 @@ export class ScheduleEditorComponent implements OnInit {
       row.arrivalTime = byIndex.get(row.pathIndex)?.arrivalTime ?? '';
       row.departureTime = byIndex.get(row.pathIndex)?.departureTime ?? '';
     }
+  }
+
+  // Recomputed on every change to the vehicle, start time, path, dwell, or saved services.
+  private refreshConflicts(): void {
+    const path = this.parsePathText();
+    const vehicleId = this.serviceForm.vehicleId;
+    const editingId = this.editingServiceId();
+    const elements = this.topology().elements;
+    const timeline = candidateTimeline(
+      this.serviceForm.startTime,
+      path,
+      elements,
+      new Map(this.serviceForm.platformTimings.map((row) => [row.pathIndex, row.dwellSeconds])),
+    );
+    const blockers: string[] = pathEndpointProblems(path, elements);
+    const conflictIds = new Set<string>();
+    const blocked: Record<string, string> = {};
+    if (timeline !== null && vehicleId) {
+      const range = (start: number, end: number) => `${this.slotTime(start)} to ${this.slotTime(end)}`;
+      if (timeline.length >= 2) {
+        const candidate: ScheduleWindow = {
+          serviceId: editingId,
+          vehicleId,
+          start: timeline[0].start,
+          end: timeline[timeline.length - 1].end,
+          startElementId: path[0],
+          endElementId: path[path.length - 1],
+        };
+        const label = (window: ScheduleWindow) => window === candidate ? 'this service' : `service #${window.serviceId}`;
+        const describe = (problem: VehicleProblem) => problem.kind === 'overlap'
+          ? `On ${problem.service.vehicleId}, ${label(problem.service)} overlaps ${label(problem.other)} `
+            + `(${range(problem.other.start, problem.other.end)}).`
+          : `${problem.from.vehicleId} cannot continue from ${label(problem.from)} ending at `
+            + `${problem.from.endElementId} to ${label(problem.to)} starting at ${problem.to.startElementId}.`;
+        blockers.push(...vehicleProblems(candidate, this.services().map(savedWindow)).map(describe));
+      } else {
+        // Before a path exists only the start instant can be judged.
+        const busy = this.busyAtStart;
+        if (busy !== null) {
+          blockers.push(`${vehicleId} is running service #${busy.serviceId} at this time (${range(busy.start, busy.end)}).`);
+        }
+      }
+      const held = (group: string, holder: { vehicleId: string; serviceId: number; start: number; end: number }) =>
+        `interlocking group ${group} is held by ${holder.vehicleId} service #${holder.serviceId}, ${range(holder.start, holder.end)}`;
+      for (const conflict of interlockingConflicts(timeline, vehicleId, this.services(), elements, editingId)) {
+        conflictIds.add(conflict.elementId);
+        blockers.push(`${conflict.elementId} (step ${conflict.pathIndex + 1}): ${held(conflict.group, conflict)}.`);
+      }
+      const pathEnd = timeline.length > 0
+        ? timeline[timeline.length - 1].end
+        : Date.parse(`${this.serviceForm.startTime}+08:00`);
+      for (const [elementId, conflict] of blockedNextElements(path, pathEnd, vehicleId, this.services(), this.topology(), editingId)) {
+        blocked[elementId] = `on the way through ${conflict.elementId}, ${held(conflict.group, conflict)}`;
+      }
+    }
+    // The map redraws whenever an input changes identity, so keep unchanged values.
+    const setIfChanged = <T>(target: { (): T; set(value: T): void }, value: T) => {
+      if (JSON.stringify(target()) !== JSON.stringify(value)) {
+        target.set(value);
+      }
+    };
+    setIfChanged(this.blockers, blockers);
+    setIfChanged(this.conflictElementIds, [...conflictIds]);
+    setIfChanged(this.blockedNext, blocked);
   }
 
   private clearNotice(): void {
