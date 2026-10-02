@@ -20,6 +20,7 @@ const CANDIDATE_HALO = '#93c5fd';
 
 const ARROW_GROW_MS = 350;
 const RING_TRACE_MS = 450;
+const CANDIDATE_FADE_MS = 300;
 
 // Crossover blocks sit on the straight line between their two neighbours and
 // away from its midpoint, so each pair (B8/B10, B4/B13) draws as an X as in
@@ -208,6 +209,19 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
         .attr('y2', (edge) => points[edge.toElementId].y);
     }
 
+    const animating = growingEdge !== null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const previousEnd = this.selectedPath.at(-2);
+    const previousEligibleIds = animating
+      ? new Set(this.topology.connections
+          .filter((connection) => connection.fromElementId === previousEnd)
+          .map((connection) => connection.toElementId))
+      : eligibleIds;
+    const previousSelectedIds = animating ? new Set(this.selectedPath.slice(0, -1)) : selectedIds;
+    const dimOpacity = (eligible: Set<string>, selected: Set<string>) => (element: TrackElementResponse) =>
+      this.interactive && eligible.size > 0 && !eligible.has(element.id) && !selected.has(element.id) ? 0.38 : 1;
+    const strokeWidth = (eligible: Set<string>, selected: Set<string>) => (element: TrackElementResponse) =>
+      eligible.has(element.id) || selected.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2;
+
     const node = svg.append('g')
       .attr('class', 'nodes')
       .selectAll<SVGGElement, TrackElementResponse>('g')
@@ -218,7 +232,7 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('tabindex', (element) => this.interactive && eligibleIds.has(element.id) ? 0 : null)
       .attr('aria-label', (element) => `${element.elementType.toLowerCase()} ${element.id}`)
       .style('cursor', (element) => this.interactive && eligibleIds.has(element.id) ? 'pointer' : 'default')
-      .style('opacity', (element) => this.interactive && eligibleIds.size > 0 && !eligibleIds.has(element.id) && !selectedIds.has(element.id) ? 0.38 : 1)
+      .style('opacity', dimOpacity(eligibleIds, selectedIds))
       .on('click', (_, element) => this.select(element.id, eligibleIds))
       .on('keydown', (event: KeyboardEvent, element) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -230,7 +244,31 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
     // Breathing halo behind each candidate signals that it can be clicked.
     // SMIL is used because Angular's scoped component styles do not reach
     // elements created by d3.
-    const halo = node.filter((element) => eligibleIds.has(element.id))
+    // While the arrow grows, the previous candidates stay lit; on arrival
+    // they fade out and the new candidates fade in. The fade runs on a
+    // wrapper group because SMIL owns the rect's opacity.
+    const haloGroup = node.filter((element) => eligibleIds.has(element.id) || previousEligibleIds.has(element.id))
+      .append('g');
+    if (animating) {
+      node.style('opacity', dimOpacity(previousEligibleIds, previousSelectedIds))
+        .transition('dim')
+        .delay(ARROW_GROW_MS)
+        .duration(CANDIDATE_FADE_MS)
+        .style('opacity', dimOpacity(eligibleIds, selectedIds));
+      haloGroup.filter((element) => !previousEligibleIds.has(element.id))
+        .attr('opacity', 0)
+        .transition()
+        .delay(ARROW_GROW_MS)
+        .duration(CANDIDATE_FADE_MS)
+        .attr('opacity', 1);
+      haloGroup.filter((element) => !eligibleIds.has(element.id))
+        .transition()
+        .delay(ARROW_GROW_MS)
+        .duration(CANDIDATE_FADE_MS)
+        .attr('opacity', 0)
+        .remove();
+    }
+    const halo = haloGroup
       .append('rect')
       .attr('x', (element) => element.elementType === 'BLOCK' ? -28 : -37)
       .attr('y', (element) => element.elementType === 'BLOCK' ? -22 : -27)
@@ -256,16 +294,34 @@ export class TrackMapComponent implements AfterViewInit, OnChanges {
       .attr('rx', (element) => element.elementType === 'YARD' ? 4 : element.elementType === 'PLATFORM' ? 7 : 16)
       .attr('fill', (element) => this.nodeFill(element, selectedIds, conflictIds, playbackIds))
       .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
-      .attr('stroke-width', (element) => eligibleIds.has(element.id) || selectedIds.has(element.id) || conflictIds.has(element.id) || playbackIds.has(element.id) ? 4 : 2);
+      .attr('stroke-width', strokeWidth(eligibleIds, selectedIds));
 
-    if (growingEdge && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      // The newly selected node stays unselected until the arrow arrives,
-      // then a green ring is traced around it while the fill fades in.
+    if (animating) {
+      // Candidate outlines change together with their halos.
+      node.filter((element) => previousEligibleIds.has(element.id) !== eligibleIds.has(element.id))
+        .select<SVGRectElement>('.node-shape')
+        .attr('stroke', (element) => this.nodeStroke(element, previousEligibleIds, previousSelectedIds, conflictIds, playbackIds))
+        .attr('stroke-width', strokeWidth(previousEligibleIds, previousSelectedIds))
+        .transition('stroke')
+        .delay(ARROW_GROW_MS)
+        .duration(CANDIDATE_FADE_MS)
+        .attr('stroke', (element) => this.nodeStroke(element, eligibleIds, selectedIds, conflictIds, playbackIds))
+        .attr('stroke-width', strokeWidth(eligibleIds, selectedIds));
+
+      // The newly selected node keeps its candidate look until the arrow
+      // arrives, then a green ring is traced around it while the fill fades in.
       const arrivedId = this.selectedPath[this.selectedPath.length - 1];
       const firstVisit = this.selectedPath.indexOf(arrivedId) === this.selectedPath.length - 1;
       const arrived = node.filter((element) => element.id === arrivedId);
       const shape = arrived.select<SVGRectElement>('.node-shape');
-      shape.attr('stroke', '#667889').attr('stroke-width', 2);
+      shape
+        .attr('stroke', CANDIDATE_STROKE)
+        .attr('stroke-width', 4)
+        .transition('stroke')
+        .delay(ARROW_GROW_MS)
+        .duration(CANDIDATE_FADE_MS)
+        .attr('stroke', '#667889')
+        .attr('stroke-width', 2);
       if (firstVisit) {
         shape
           .attr('fill', (element) => this.nodeFill(element, new Set(), conflictIds, playbackIds))
