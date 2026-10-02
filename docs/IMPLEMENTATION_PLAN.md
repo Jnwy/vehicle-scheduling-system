@@ -81,6 +81,58 @@ Next action: merge Phase C after user review, then Phase D (F7 documentation
 cleanup), which needs user authorization. This
 supersedes the older "Next Concrete Action" section below.
 
+### Handoff Checkpoint (2026-10-02)
+
+Work stops here and continues on another computer. Checkpoint: Phase C
+complete and verified, not merged.
+
+Git state:
+
+- `main` (pushed): `faa0867`, contains Phases A and B
+- `worktree-review-findings-plan` (pushed): contains Phase C on top of
+  `main`, fast-forwardable; head is this handoff commit
+- no uncommitted work is part of this checkpoint
+
+To resume:
+
+```bash
+git fetch origin
+git checkout worktree-review-findings-plan
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+```
+
+Then create the test database and run the full suite with the commands in
+the README "Running Tests" section. Expected result: `191 passed`.
+
+To merge Phase C after review:
+
+```bash
+git checkout main
+git merge --ff-only worktree-review-findings-plan
+git push origin main
+```
+
+Open decisions, all for the user:
+
+1. Merge Phase C into `main`.
+2. Start Phase D (F7): reduce this document to current status, decisions, and
+   verification results, and fold `docs/BONUS_IMPLEMENTATION_HANDOFF.md` into
+   other documents before removing it.
+3. Add a frontend unit-test setup or not. `savedTimingsAreStale` in
+   `service-timing.ts` and `buildVehicleOverviews` in `schedule-overview.ts`
+   have browser verification only.
+
+Not verified at this checkpoint:
+
+- the default stack on its published ports 8000 and 4200; Phase C was
+  verified on alternate host ports beside a running stack
+- Bonus 3 remains not implemented
+
+Local-only state on the previous computer, not needed to continue: a scratch
+database `review_fresh_start_test`, the application database volume, browser
+check scripts and screenshots, and a checkout still on
+`codex/basic-version-integration` at `2d1fe00`.
+
 ## Active Handoff: Integration Recovery (2026-10-02)
 
 A previous agent stopped in the middle of integrating parallel work onto
