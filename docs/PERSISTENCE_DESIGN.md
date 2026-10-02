@@ -1,7 +1,7 @@
 # Persistence Design
 
-This document records the P0 persistence contract. It defines the schema and
-ownership boundaries to implement before adding FastAPI behavior.
+This document describes the implemented PostgreSQL schema and the ownership
+boundaries between persistence, the application layer, and the domain.
 
 ## Scope
 
@@ -14,8 +14,8 @@ Persistence stores:
 - the calculated timeline snapshot for each path occurrence
 
 Persistence does not implement scheduling rules. Path validation, timeline
-calculation, vehicle overlap, and location continuity remain in the domain
-modules.
+calculation, vehicle overlap, location continuity, and interlocking
+exclusivity remain in the domain modules.
 
 ## Timeline Snapshot Decision
 
@@ -54,7 +54,7 @@ null values with 20 and preserves non-null custom values. API updates cannot
 clear this configuration. Timeline calculation still rejects an unconfigured
 block supplied outside the seed.
 
-## Proposed Schema
+## Schema
 
 ### `vehicles`
 
@@ -149,9 +149,9 @@ persists already validated values and reconstructs domain objects.
 
 Repository methods receive a session but do not commit independently. The
 application layer owns commit and rollback so service validation and all child
-writes can eventually share one transaction boundary.
+writes share one transaction boundary.
 
-The application now serializes service and block configuration writes with
+The application serializes service and block configuration writes with
 PostgreSQL transaction advisory lock `72634001`, acquired before reading data.
 Validation and repository writes share `session.begin()`; exceptions roll back
 the full operation. The default READ COMMITTED isolation sees committed data
@@ -166,14 +166,3 @@ the HTTP and concurrency contract.
 - Blocks B1-B14 initially use 20 seconds; existing null values are filled with 20.
 - The vehicle seed is `V1`, `V2`.
 - Seed execution must not overwrite user-configured traversal values.
-
-## P0 Review Checklist
-
-- [x] Timeline snapshot policy selected.
-- [x] Mutable block configuration separated from fixed topology structure.
-- [x] Minimal tables and ownership defined.
-- [x] Ordering, keys, cascades, and transaction ownership defined.
-- [x] Domain rules remain outside ORM models.
-- [x] Seeded vehicle inventory confirmed as `V1`, `V2`.
-
-P0 is complete and ready for review before P1 implementation begins.

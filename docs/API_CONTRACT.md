@@ -1,7 +1,8 @@
 # FastAPI Scheduling Contract
 
-Implemented and verified on 2026-10-01. Interactive OpenAPI documentation is
-available at <http://localhost:8000/docs> after Docker startup.
+Interactive OpenAPI documentation is available at
+<http://localhost:8000/docs> after Docker startup. The frontend calls the same
+endpoints through its `/api/` prefix.
 
 ## Endpoints
 
@@ -16,14 +17,15 @@ available at <http://localhost:8000/docs> after Docker startup.
 | GET /topology | 200 | Fixed elements and directed connections, in natural ID order |
 | GET /blocks | 200 | Block traversal configuration, in natural ID order (`B2` before `B10`) |
 | PUT /blocks/{id} | 200 | Replace traversal configuration |
+| GET /schedule-analysis | 200 | Bonus report: per-vehicle playback segments with battery, and detected conflicts |
 
-IDs are ordered lexicographically for topology/vehicles/blocks and numerically
-for services. No vehicle/topology structure CRUD or bonus conflict enforcement
-is provided.
+Vehicles, topology elements, and blocks are returned in natural ID order;
+services are ordered numerically. No vehicle or topology structure CRUD is
+provided, and Bonus conflicts are reported, not enforced.
 
 ## Service Input and Output
 
-POST and PUT accept the README service fields: `vehicleId`, `startTime`, `path`,
+POST and PUT accept the service fields `vehicleId`, `startTime`, `path`,
 and `platformTimings`. Every platform timing contains a strict integer
 `pathIndex`, `arrivalTime`, and `departureTime`. Indexing starts at zero and
 identifies an occurrence, allowing repeated platforms. `platformTimings` may be
@@ -31,7 +33,7 @@ omitted for paths without platforms; domain validation requires every platform
 occurrence to have a timing. Unknown body fields, including `id` and `timeline`,
 are rejected. PUT replaces all input rather than merging fields.
 
-Example (configure B1 to 20 seconds first):
+Example (with B1 at its default 20 seconds):
 
 ```json
 {
@@ -76,6 +78,29 @@ JSON integers from 0 through 2147483647 (PostgreSQL INTEGER range); booleans,
 floating point values, strings (including empty strings), null, omitted values,
 negative values, and overflow are rejected with 422.
 Existing service snapshots remain stable after configuration writes.
+
+## Schedule Analysis
+
+GET /schedule-analysis reads the saved snapshots and changes nothing. It
+returns `startTime` and `endTime` of the whole schedule (null when there are
+no services), `vehicles`, and `conflicts`.
+
+Each vehicle has `vehicleId` and ordered `segments`. A segment has
+`segmentType`, `serviceId` and `pathIndex` (null while idle), `elementId`,
+`startTime`, `endTime`, `batteryStart`, and `batteryEnd`. The Schedule Viewer
+uses these segments for playback.
+
+Each conflict has `conflictType`, `resourceId`, `startTime`, `endTime`,
+`vehicleIds`, `serviceIds`, `elementIds`, and `message`:
+
+| `conflictType` | Meaning |
+| --- | --- |
+| `BLOCK_OCCUPANCY` | Two or more vehicles occupy the same block in overlapping `[start, end)` intervals |
+| `LOW_BATTERY` | A vehicle's battery is below 30 while it is not in the yard |
+| `INSUFFICIENT_CHARGE` | A vehicle leaves the yard below 80 |
+
+The battery model is defined in `DOMAIN_RULES.md` section 8.1. Interlocking is
+not reported here because a violating service cannot be saved.
 
 ## Errors
 
@@ -148,22 +173,14 @@ new vehicles. Deletions validate the remaining adjacent pair. Domain validators
 retain half-open interval semantics, empty intervals, and existing equal-time
 neighbor selection. Persisted service IDs determine stable list/input order.
 
-## Verification and Acceptance
+## Verification
 
 Use the isolated database test commands in README. API tests commit real
 transactions and require a database name ending in `_test`; they clear service
 rows only in that explicitly designated database. Do not run concurrent test
 suites against the same database.
 
-Docker verification: full suite `128 passed`, Alembic check reported no schema
-drift, and a fresh `fastapi_workflow_test` database migrated/seeded through the
-normal startup script. A real HTTP workflow on port 8001 returned 200 for block
-configuration, 201 for create, 200 for read/update, and 204 for delete, followed
-by an empty service list. Two independent-session conflict writers produced
-exactly one 201 and one 409. Rollback recovery and shared-lock configuration
-blocking are covered by PostgreSQL tests.
-
-For user acceptance, configure blocks through `/docs`, create a service, verify
-the saved timeline, edit it, and delete it. Try an overlap and a broken middle
-deletion to observe 409 and unchanged data. Angular feature pages and final
-frontend end-to-end acceptance remain future milestones.
+`backend/tests/test_api.py` covers the status codes and error bodies above,
+rollback of rejected writes, and two concurrent conflicting writers producing
+exactly one 201 and one 409. Current results are recorded in
+`IMPLEMENTATION_PLAN.md`.

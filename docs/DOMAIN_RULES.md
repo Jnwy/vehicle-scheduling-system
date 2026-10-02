@@ -606,7 +606,7 @@ Validation and replacement share the application transaction and write lock.
 
 Core rules should be covered using unit tests independent of FastAPI and the database.
 
-Initial path validator tests:
+Path validator tests:
 
 1. valid path passes
 2. empty path fails
@@ -616,6 +616,8 @@ Initial path validator tests:
 6. reverse direction fails
 7. block-to-block connection passes
 8. mixed yard/platform/block path passes
+9. a path starting or ending on a block fails
+10. a path longer than 200 elements fails
 
 Mandatory scheduling tests include:
 
